@@ -9,12 +9,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.prebid.server.hooks.execution.v1.auction.AuctionResponsePayloadImpl;
+import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.Audience;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.AudienceId;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
 import org.prebid.server.hooks.v1.InvocationAction;
 import org.prebid.server.hooks.v1.InvocationResult;
 import org.prebid.server.hooks.v1.InvocationStatus;
+import org.prebid.server.hooks.v1.analytics.Activity;
+import org.prebid.server.hooks.v1.analytics.Result;
+import org.prebid.server.hooks.v1.analytics.Tags;
 import org.prebid.server.hooks.v1.auction.AuctionInvocationContext;
 import org.prebid.server.hooks.v1.auction.AuctionResponseHook;
 import org.prebid.server.hooks.v1.auction.AuctionResponsePayload;
@@ -67,11 +71,17 @@ public class OptableTargetingAuctionResponseHookTest extends BaseOptableTest {
         assertThat(future.succeeded()).isTrue();
 
         final InvocationResult<AuctionResponsePayload> result = future.result();
-        assertThat(result).isNotNull();
-        assertThat(result.status()).isEqualTo(InvocationStatus.success);
-        assertThat(result.action()).isEqualTo(InvocationAction.no_action);
-        assertThat(result.analyticsTags().activities().getFirst()
-                .results().getFirst().values().get("reason")).isNotNull();
+        assertThat(result).isNotNull()
+                .returns(InvocationStatus.success, InvocationResult::status)
+                .returns(InvocationAction.no_action, InvocationResult::action);
+        assertThat(result.analyticsTags())
+                .extracting(Tags::activities)
+                .extracting(List::getFirst)
+                .extracting(Activity::results)
+                .extracting(List::getFirst)
+                .extracting(Result::values)
+                .extracting(it -> it.get("reason"))
+                .isNotNull();
         assertThat(result.errors()).isNull();
     }
 
@@ -125,6 +135,26 @@ public class OptableTargetingAuctionResponseHookTest extends BaseOptableTest {
                         List.of(new AudienceId("audienceId")),
                         "keyspace",
                         1))));
+
+        // when
+        final Future<InvocationResult<AuctionResponsePayload>> future =
+                target.call(auctionResponsePayload, invocationContext);
+        final InvocationResult<AuctionResponsePayload> result = future.result();
+
+        // then
+        assertThat(future).isNotNull();
+        assertThat(future.succeeded()).isTrue();
+        assertThat(result).isNotNull()
+                .returns(InvocationStatus.success, InvocationResult::status)
+                .returns(InvocationAction.no_action, InvocationResult::action);
+    }
+
+    @Test
+    public void shouldReturnSuccessWhenSkipEnrichmentIsTrue() {
+        // given
+        final ModuleContext moduleContext = givenModuleContext();
+        moduleContext.setShouldSkipEnrichment(true);
+        when(invocationContext.moduleContext()).thenReturn(moduleContext);
 
         // when
         final Future<InvocationResult<AuctionResponsePayload>> future =

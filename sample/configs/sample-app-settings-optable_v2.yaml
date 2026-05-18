@@ -1,0 +1,97 @@
+accounts:
+  - id: 1
+    status: active
+    auction:
+      price-granularity: low
+    privacy:
+      ccpa:
+        enabled: true
+      gdpr:
+        enabled: true
+    cookie-sync:
+      default-limit: 8
+      max-limit: 15
+      coop-sync:
+        default: true
+    analytics:
+      allow-client-details: true
+    hooks:
+      modules:
+        optable-targeting:
+          api-key: key
+          tenant: optable
+          origin: web-sdk-demo
+          enrichment-percentage: 100
+          bidder-enrichment-percentages:
+            appnexus: 75
+            rubicon: 75
+            pubmatic: 100
+            criteo: 0
+          enrich-web: true
+          enrich-app: true
+          ppid-mapping: { "pubcid.org": "c" }
+          adserver-targeting: true
+          cache:
+            enabled: false
+            ttlseconds: 86400
+      execution-plan:
+        {
+          "endpoints": {
+            "/openrtb2/auction": {
+              "stages": {
+                "raw-auction-request": {
+                  "groups": [
+                    {
+                      "timeout": 1000,
+                      "hook-sequence": [
+                        {
+                          "module-code": "optable-targeting",
+                          "hook-impl-code": "optable-targeting-raw-auction-request-hook"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "bidder-request": {
+                  "groups": [
+                    {
+                      "timeout": 500,
+                      "hook-sequence": [
+                        {
+                          "module-code": "optable-targeting",
+                          "hook-impl-code": "optable-targeting-bidder-request-hook"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "processed-auction-request": {
+                  "groups": [
+                    {
+                      "timeout": 600,
+                      "hook-sequence": [
+                        {
+                          "module-code": "optable-targeting",
+                          "hook-impl-code": "optable-targeting-processed-auction-request-hook"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "auction-response": {
+                  "groups": [
+                    {
+                      "timeout": 10,
+                      "hook-sequence": [
+                        {
+                          "module-code": "optable-targeting",
+                          "hook-impl-code": "optable-targeting-auction-response-hook"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
