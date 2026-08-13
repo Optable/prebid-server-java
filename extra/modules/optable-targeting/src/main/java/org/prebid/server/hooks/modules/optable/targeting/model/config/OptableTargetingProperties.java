@@ -42,4 +42,16 @@ public final class OptableTargetingProperties {
     Set<String> optableInserterEidsIgnore = Set.of();
 
     CacheProperties cache = new CacheProperties();
+
+    @JsonProperty("enrichment-percentage")
+    Integer enrichmentPercentage = 100;
+
+    @JsonProperty("bidder-enrichment-percentages")
+    Map<String, Integer> bidderEnrichmentPercentages = Map.of();
+
+    @JsonProperty("enrich-web")
+    Boolean enrichWeb = true;
+
+    @JsonProperty("enrich-app")
+    Boolean enrichApp = true;
 }
