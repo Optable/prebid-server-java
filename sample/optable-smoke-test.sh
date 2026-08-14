@@ -17,7 +17,10 @@
 # samples per bidder, so they also assert that pubmatic - configured at 0% enrichment in
 # sample-app-settings-optable.yaml - is never enriched.
 #
-# Usage: ./sample/optable-smoke-test.sh   (run from the repository root)
+# Usage: ./sample/optable-smoke-test.sh              build the bundle, then run
+#        ./sample/optable-smoke-test.sh --no-build   reuse the existing bundle
+#
+# Run from the repository root. Requires JDK 25 and network access to the Optable edge.
 
 set -uo pipefail
 
@@ -29,11 +32,34 @@ ADMIN_PORT=8061
 # device.ip in the request is deliberately non-EU: an EU address makes the edge
 # return refs without a signature, which would fail scenario 1 for the wrong reason.
 
-if [ ! -f "$BUNDLE" ]; then
-    echo "FAIL: $BUNDLE not found - build it first:"
-    echo "  mvn clean package -Dmaven.test.skip=true -Ddocker.skip=true"
-    exit 1
-fi
+build_bundle() {
+    echo "=== building $BUNDLE"
+    # maven-jar-plugin leaves an existing archive alone when it considers it up to date, so
+    # `mvn package` logs "Replacing main artifact" while a stale bundle survives source
+    # changes. Removing it first forces a real repackage without paying for a full clean.
+    rm -f "$BUNDLE"
+    if ! mvn -q package -Dmaven.test.skip=true -Ddocker.skip=true --file extra/pom.xml; then
+        echo "FAIL: build failed. The bundle needs JDK 25 - check java -version."
+        exit 1
+    fi
+}
+
+case ${1-} in
+    --no-build)
+        if [ ! -f "$BUNDLE" ]; then
+            echo "FAIL: --no-build given but $BUNDLE does not exist"
+            exit 1
+        fi
+        echo "=== using existing $BUNDLE"
+        ;;
+    "")
+        build_bundle
+        ;;
+    *)
+        echo "usage: $0 [--no-build]"
+        exit 1
+        ;;
+esac
 
 server_pid=""
 cleanup() { [ -n "$server_pid" ] && kill "$server_pid" 2>/dev/null; }
@@ -80,7 +106,7 @@ auction() {
 # before letting the assertions call it a real miss.
 auction_with_enrichment() {
     local out=$1
-    for _ in 1 2 3; do
+    for _ in 1 2 3 4 5; do
         auction > "$out"
         if grep -q '"eids"' "$out"; then return 0; fi
         sleep 2
