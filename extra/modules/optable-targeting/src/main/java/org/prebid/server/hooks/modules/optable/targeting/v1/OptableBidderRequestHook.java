@@ -10,6 +10,7 @@ import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.Ortb2;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.AnalyticTagsResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderRequestEnricher;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.Id5Resolver;
 import org.prebid.server.hooks.v1.InvocationAction;
 import org.prebid.server.hooks.v1.InvocationResult;
 import org.prebid.server.hooks.v1.InvocationStatus;
@@ -58,6 +59,7 @@ public class OptableBidderRequestHook implements BidderRequestHook {
 
         if (hasData) {
             moduleContext.setTargeting(targetingResult.getAudience());
+            moduleContext.setId5Signature(Id5Resolver.resolveId5Signature(targetingResult));
             moduleContext.setEnrichRequestStatus(EnrichmentStatus.success());
         }
 
@@ -94,7 +96,9 @@ public class OptableBidderRequestHook implements BidderRequestHook {
         return startTime > 0 ? System.currentTimeMillis() - startTime : 0;
     }
 
-    private Future<InvocationResult<BidderRequestPayload>> noAction(ModuleContext moduleContext, Tags analyticsTags) {
+    private Future<InvocationResult<BidderRequestPayload>> noAction(ModuleContext moduleContext,
+                                                                            Tags analyticsTags) {
+
         return Future.succeededFuture(
                 InvocationResultImpl.<BidderRequestPayload>builder()
                         .status(InvocationStatus.success)

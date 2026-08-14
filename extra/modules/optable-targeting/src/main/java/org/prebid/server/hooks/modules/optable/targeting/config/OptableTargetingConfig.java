@@ -48,7 +48,7 @@ public class OptableTargetingConfig {
 
     @Bean
     IdsMapper queryParametersExtractor(@Value("${logging.sampling-rate:0.01}") double logSamplingRate) {
-        return new IdsMapper(ObjectMapperProvider.mapper(), logSamplingRate);
+        return new IdsMapper(logSamplingRate);
     }
 
     @Bean
@@ -98,10 +98,11 @@ public class OptableTargetingConfig {
 
     @Bean
     TargetingRequestExecutor targetingRequestExecutor(OptableTargeting optableTargeting,
-                            UserFpdActivityMask userFpdActivityMask,
-                            TimeoutFactory timeoutFactory) {
+                                                      UserFpdActivityMask userFpdActivityMask,
+                                                      TimeoutFactory timeoutFactory,
+                                                      @Value("${logging.sampling-rate:0.01}") double logSamplingRate) {
 
-        return new TargetingRequestExecutor(optableTargeting, userFpdActivityMask, timeoutFactory);
+        return new TargetingRequestExecutor(optableTargeting, userFpdActivityMask, timeoutFactory, logSamplingRate);
     }
 
     @Bean

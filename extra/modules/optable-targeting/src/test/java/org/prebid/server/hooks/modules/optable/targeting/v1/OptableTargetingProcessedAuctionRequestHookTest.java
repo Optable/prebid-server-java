@@ -80,7 +80,8 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         when(userFpdActivityMask.maskDevice(any(), anyBoolean(), anyBoolean()))
                 .thenAnswer(answer -> answer.getArgument(0));
         configResolver = new ConfigResolver(mapper, jsonMerger, givenOptableTargetingProperties(false));
-        targetingRequestExecutor = new TargetingRequestExecutor(optableTargeting, userFpdActivityMask, timeoutFactory);
+        targetingRequestExecutor = new TargetingRequestExecutor(
+                optableTargeting, userFpdActivityMask, timeoutFactory, 0.01);
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver, targetingRequestExecutor, CompositeHookExecutionPlan.of(ExecutionPlan.empty()), 0.01);
 
@@ -154,6 +155,50 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
                 .flatExtracting(Data::getSegment)
                 .extracting(Segment::getId)
                 .containsExactly("id");
+    }
+
+    @Test
+    void callShouldSetId5SignatureOnModuleContextWhenTargetingResultContainsId5Signature() {
+        // given
+        final String refValue = "refValue";
+        final String signature = "id5Signature";
+        final Eid id5Eid = givenId5Eid(refValue);
+        final ObjectNode refs = givenRefsObject(refValue, signature);
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(optableTargeting.getTargeting(any(), any(), any(), any()))
+                .thenReturn(Future.succeededFuture(givenTargetingResult(List.of(id5Eid), null, refs)));
+
+        // when
+        final Future<InvocationResult<AuctionRequestPayload>> future = target.call(auctionRequestPayload,
+                invocationContext);
+
+        // then
+        assertThat(future).isNotNull();
+        assertThat(future.succeeded()).isTrue();
+        assertThat((ModuleContext) future.result().moduleContext())
+                .isNotNull()
+                .extracting(ModuleContext::getId5Signature)
+                .isEqualTo(signature);
+    }
+
+    @Test
+    void callShouldLeaveId5SignatureNullWhenTargetingResultHasNoId5Signature() {
+        // given
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(optableTargeting.getTargeting(any(), any(), any(), any()))
+                .thenReturn(Future.succeededFuture(givenTargetingResult()));
+
+        // when
+        final Future<InvocationResult<AuctionRequestPayload>> future = target.call(auctionRequestPayload,
+                invocationContext);
+
+        // then
+        assertThat(future).isNotNull();
+        assertThat(future.succeeded()).isTrue();
+        assertThat((ModuleContext) future.result().moduleContext())
+                .isNotNull()
+                .extracting(ModuleContext::getId5Signature)
+                .isNull();
     }
 
     @Test
