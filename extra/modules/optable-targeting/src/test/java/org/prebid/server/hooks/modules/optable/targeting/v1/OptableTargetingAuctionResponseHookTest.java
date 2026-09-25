@@ -34,7 +34,6 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 public class OptableTargetingAuctionResponseHookTest extends BaseOptableTest {
 
-    private ConfigResolver configResolver;
     private AuctionResponseHook target;
 
     @Mock
@@ -45,9 +44,9 @@ public class OptableTargetingAuctionResponseHookTest extends BaseOptableTest {
     @BeforeEach
     public void setUp() {
         when(invocationContext.accountConfig()).thenReturn(givenAccountConfig(true));
-        configResolver = new ConfigResolver(mapper, jsonMerger, givenOptableTargetingProperties(false));
+
         target = new OptableTargetingAuctionResponseHook(
-                configResolver,
+                new ConfigResolver(mapper, jsonMerger, givenOptableTargetingProperties(false)),
                 mapper,
                 jsonMerger);
     }
