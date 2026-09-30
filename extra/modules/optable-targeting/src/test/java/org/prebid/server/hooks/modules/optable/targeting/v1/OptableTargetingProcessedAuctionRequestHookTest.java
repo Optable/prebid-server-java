@@ -14,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.prebid.server.activity.infrastructure.ActivityInfrastructure;
 import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
+import org.prebid.server.auction.requestfactory.Ortb2ImplicitParametersResolver;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.execution.v1.auction.AuctionRequestPayloadImpl;
@@ -71,6 +72,9 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
     private TimeoutFactory timeoutFactory;
 
     @Mock(strictness = Mock.Strictness.LENIENT)
+    private Ortb2ImplicitParametersResolver implicitParametersResolver;
+
+    @Mock(strictness = Mock.Strictness.LENIENT)
     private BidderEnrichmentSampler bidderEnrichmentSampler;
 
     private TargetingRequestExecutor targetingRequestExecutor;
@@ -83,7 +87,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
                 .thenAnswer(answer -> answer.getArgument(0));
         configResolver = new ConfigResolver(mapper, jsonMerger, givenOptableTargetingProperties(false));
         targetingRequestExecutor = new TargetingRequestExecutor(
-                optableTargeting, userFpdActivityMask, timeoutFactory, 0.01);
+                optableTargeting, userFpdActivityMask, implicitParametersResolver, timeoutFactory, 0.01);
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver, givenFlowResolver(), 0.01);
 

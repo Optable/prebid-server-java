@@ -8,14 +8,18 @@ import lombok.SneakyThrows;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.prebid.server.activity.infrastructure.ActivityInfrastructure;
+import org.prebid.server.auction.model.IpAddress;
 import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
+import org.prebid.server.auction.requestfactory.Ortb2ImplicitParametersResolver;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
+import org.prebid.server.hooks.modules.optable.targeting.model.OptableAttributes;
 import org.prebid.server.hooks.modules.optable.targeting.model.Status;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
@@ -60,6 +64,8 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
     @Mock
     private TimeoutFactory timeoutFactory;
     @Mock
+    private Ortb2ImplicitParametersResolver implicitParametersResolver;
+    @Mock
     private BidderEnrichmentSampler bidderEnrichmentSampler;
 
     private ConfigResolver configResolver;
@@ -72,7 +78,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                 .thenAnswer(answer -> answer.getArgument(0));
         configResolver = new ConfigResolver(mapper, jsonMerger, givenOptableTargetingProperties(false));
         targetingRequestExecutor = new TargetingRequestExecutor(
-                optableTargeting, userFpdActivityMask, timeoutFactory, 0.01);
+                optableTargeting, userFpdActivityMask, implicitParametersResolver, timeoutFactory, 0.01);
         target = new OptableRawAuctionRequestHook(
                 configResolver, givenEarlyOptableCallResolver(), 0.01);
         when(invocationContext.auctionContext()).thenReturn(givenAuctionContext(activityInfrastructure, timeout));
@@ -348,5 +354,24 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
         assertThat(moduleContext.getBiddersToEnrich()).isNull();
         assertThat(moduleContext.getOptableTargetingCall()).isNull();
         assertThat(result.payloadUpdate()).isNotNull();
+    }
+
+    @Test
+    public void shouldSendIpResolvedFromHttpRequestWhenDeviceHasNoIp() {
+        // given
+        when(invocationContext.accountConfig())
+                .thenReturn(givenAccountConfig("key", "tenant", "origin", true));
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
+        when(implicitParametersResolver.findIpFromRequest(any()))
+                .thenReturn(IpAddress.of("8.8.8.8", IpAddress.IP.v4));
+
+        // when
+        target.call(auctionRequestPayload, invocationContext);
+
+        // then
+        final ArgumentCaptor<OptableAttributes> captor = ArgumentCaptor.forClass(OptableAttributes.class);
+        verify(optableTargeting).getTargeting(any(), any(), captor.capture(), any());
+        assertThat(captor.getValue().getIps()).containsExactly("8.8.8.8");
     }
 }

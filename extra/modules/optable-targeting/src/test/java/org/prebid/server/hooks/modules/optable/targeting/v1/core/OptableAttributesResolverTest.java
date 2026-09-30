@@ -26,7 +26,6 @@ import org.prebid.server.proto.openrtb.ext.request.ExtRegs;
 import org.prebid.server.proto.openrtb.ext.request.ExtUser;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,8 +35,6 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class OptableAttributesResolverTest extends BaseOptableTest {
-
-    private static final String X_FORWARDED_FOR_HEADER = "X-Forwarded-For";
 
     @Mock(strictness = LENIENT)
     private TcfContext tcfContext;
@@ -64,7 +61,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -83,7 +80,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -103,7 +100,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -123,7 +120,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -146,7 +143,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -161,7 +158,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -176,7 +173,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -191,7 +188,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -209,7 +206,7 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), null, properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -217,14 +214,13 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
     }
 
     @Test
-    public void shouldResolveIpFromXForwardedForHeaderWhenDeviceIpsAreAbsent() {
+    public void shouldResolveRequestIpWhenDeviceIpsAreAbsent() {
         // given
-        final AuctionContext auctionContext =
-                givenAuctionContextWithHeaders(givenBidRequest(), Map.of(X_FORWARDED_FOR_HEADER, "1.2.3.4"));
+        final AuctionContext auctionContext = givenAuctionContext(givenBidRequest(), tcfContext, gppContext);
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, auctionContext.getBidRequest(), "1.2.3.4", properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -232,15 +228,16 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
     }
 
     @Test
-    public void shouldResolveFirstIpFromXForwardedForHeaderWhenItContainsMultipleIps() {
+    public void shouldPreferDeviceIpsOverRequestIp() {
         // given
-        final AuctionContext auctionContext =
-                givenAuctionContextWithHeaders(givenBidRequest(),
-                        Map.of(X_FORWARDED_FOR_HEADER, "1.2.3.4, 5.6.7.8"));
+        final BidRequest bidRequest = BidRequest.builder()
+                .device(Device.builder().ip("1.2.3.4").build())
+                .build();
+        final AuctionContext auctionContext = givenAuctionContext(bidRequest, tcfContext, gppContext);
 
         // when
         final OptableAttributes result = OptableAttributesResolver.resolveAttributes(
-                auctionContext, properties.getTimeout(), 0.01);
+                auctionContext, bidRequest, "5.6.7.8", properties.getTimeout(), 0.01);
 
         // then
         assertThat(result).isNotNull()
@@ -295,13 +292,6 @@ public class OptableAttributesResolverTest extends BaseOptableTest {
                 .bidRequest(bidRequest)
                 .privacyContext(PrivacyContext.of(Privacy.builder().build(), tcfContext, "8.8.8.8"))
                 .gppContext(gppContext)
-                .build();
-    }
-
-    public AuctionContext givenAuctionContextWithHeaders(BidRequest bidRequest, Map<String, String> headers) {
-        return AuctionContext.builder()
-                .bidRequest(bidRequest)
-                .httpRequest(givenHttpRequestContext(headers))
                 .build();
     }
 }

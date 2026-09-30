@@ -11,7 +11,6 @@ import org.prebid.server.auction.model.AuctionContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.App;
 import org.prebid.server.hooks.modules.optable.targeting.model.OptableAttributes;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.ExtUserOptable;
-import org.prebid.server.model.HttpRequestContext;
 import org.prebid.server.proto.openrtb.ext.request.ExtRegs;
 import org.prebid.server.proto.openrtb.ext.request.ExtUser;
 
@@ -21,21 +20,12 @@ import java.util.Optional;
 
 public class OptableAttributesResolver {
 
-    private static final String X_FORWARDED_FOR_HEADER = "X-Forwarded-For";
-    private static final String X_FORWARDED_FOR_HEADER_DELIMITER = ",";
-
     private OptableAttributesResolver() {
     }
 
     public static OptableAttributes resolveAttributes(AuctionContext auctionContext,
-                                                      Long timeout,
-                                                      double logSamplingRate) {
-
-        return resolveAttributes(auctionContext, auctionContext.getBidRequest(), timeout, logSamplingRate);
-    }
-
-    public static OptableAttributes resolveAttributes(AuctionContext auctionContext,
                                                       BidRequest bidRequest,
+                                                      String requestIp,
                                                       Long timeout,
                                                       double logSamplingRate) {
 
@@ -51,7 +41,7 @@ public class OptableAttributesResolver {
                         .orElse(null));
 
         final OptableAttributes.OptableAttributesBuilder builder = OptableAttributes.builder()
-                .ips(resolveIp(auctionContext, bidRequest))
+                .ips(resolveIp(bidRequest, requestIp))
                 .userAgent(resolveUserAgent(bidRequest))
                 .app(resolveApp(bidRequest))
                 .timeout(timeout);
@@ -97,20 +87,15 @@ public class OptableAttributesResolver {
         return device != null ? device.getUa() : null;
     }
 
-    private static List<String> resolveIp(AuctionContext auctionContext, BidRequest bidRequest) {
+    private static List<String> resolveIp(BidRequest bidRequest, String requestIp) {
         final List<String> result = new ArrayList<>();
 
         final Optional<Device> deviceOpt = Optional.ofNullable(bidRequest.getDevice());
         deviceOpt.map(Device::getIp).ifPresent(result::add);
         deviceOpt.map(Device::getIpv6).ifPresent(result::add);
 
-        if (result.isEmpty()) {
-            Optional.ofNullable(auctionContext.getHttpRequest())
-                    .map(HttpRequestContext::getHeaders)
-                    .map(it -> it.get(X_FORWARDED_FOR_HEADER))
-                    .map(it -> it.split(X_FORWARDED_FOR_HEADER_DELIMITER))
-                    .map(it -> it[0])
-                    .ifPresent(result::add);
+        if (result.isEmpty() && requestIp != null) {
+            result.add(requestIp);
         }
 
         return result;

@@ -12,8 +12,10 @@ import org.prebid.server.activity.infrastructure.payload.ActivityInvocationPaylo
 import org.prebid.server.activity.infrastructure.payload.impl.ActivityInvocationPayloadImpl;
 import org.prebid.server.activity.infrastructure.payload.impl.BidRequestActivityInvocationPayload;
 import org.prebid.server.auction.model.AuctionContext;
+import org.prebid.server.auction.model.IpAddress;
 import org.prebid.server.auction.model.TimeoutContext;
 import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
+import org.prebid.server.auction.requestfactory.Ortb2ImplicitParametersResolver;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.modules.optable.targeting.model.OptableAttributes;
@@ -21,6 +23,7 @@ import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTar
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
 import org.prebid.server.hooks.modules.optable.targeting.v1.OptableTargetingModule;
 import org.prebid.server.hooks.v1.auction.AuctionInvocationContext;
+import org.prebid.server.model.HttpRequestContext;
 
 import java.util.Objects;
 
@@ -28,16 +31,19 @@ public class TargetingRequestExecutor {
 
     private final OptableTargeting optableTargeting;
     private final UserFpdActivityMask userFpdActivityMask;
+    private final Ortb2ImplicitParametersResolver implicitParametersResolver;
     private final TimeoutFactory timeoutFactory;
     private final double logSamplingRate;
 
     public TargetingRequestExecutor(OptableTargeting optableTargeting,
                                     UserFpdActivityMask userFpdActivityMask,
+                                    Ortb2ImplicitParametersResolver implicitParametersResolver,
                                     TimeoutFactory timeoutFactory,
                                     double logSamplingRate) {
 
         this.optableTargeting = Objects.requireNonNull(optableTargeting);
         this.userFpdActivityMask = Objects.requireNonNull(userFpdActivityMask);
+        this.implicitParametersResolver = Objects.requireNonNull(implicitParametersResolver);
         this.timeoutFactory = ObjectUtils.requireNonEmpty(timeoutFactory);
         this.logSamplingRate = logSamplingRate;
     }
@@ -55,6 +61,7 @@ public class TargetingRequestExecutor {
         final OptableAttributes attributes = OptableAttributesResolver.resolveAttributes(
                 invocationContext.auctionContext(),
                 originalBidRequest,
+                resolveRequestIp(invocationContext.auctionContext()),
                 properties.getTimeout(),
                 logSamplingRate);
 
@@ -75,6 +82,19 @@ public class TargetingRequestExecutor {
         final TimeoutContext timeoutContext = invocationContext.auctionContext().getTimeoutContext();
         final Timeout auctionTimeout = timeoutContext != null ? timeoutContext.getTimeout() : null;
         return auctionTimeout != null ? auctionTimeout : invocationContext.timeout();
+    }
+
+    /**
+     * The core fills device.ip from the HTTP request only after the raw auction request stage, so the same
+     * resolution is applied here for the requests that come without it.
+     */
+    private String resolveRequestIp(AuctionContext auctionContext) {
+        final HttpRequestContext httpRequest = auctionContext.getHttpRequest();
+        final IpAddress ipAddress = httpRequest != null && httpRequest.getHeaders() != null
+                ? implicitParametersResolver.findIpFromRequest(httpRequest)
+                : null;
+
+        return ipAddress != null ? ipAddress.getIp() : null;
     }
 
     private BidRequest applyActivityRestrictions(BidRequest bidRequest,

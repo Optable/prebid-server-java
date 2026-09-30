@@ -16,6 +16,7 @@ import org.mockito.quality.Strictness;
 import org.prebid.server.activity.infrastructure.ActivityInfrastructure;
 import org.prebid.server.auction.model.AuctionContext;
 import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
+import org.prebid.server.auction.requestfactory.Ortb2ImplicitParametersResolver;
 import org.prebid.server.bidder.BidderCatalog;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
@@ -74,6 +75,8 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
     @Mock
     private TimeoutFactory timeoutFactory;
     @Mock
+    private Ortb2ImplicitParametersResolver implicitParametersResolver;
+    @Mock
     private BidderCatalog bidderCatalog;
     @Mock
     private IntSupplier randomSupplier;
@@ -103,7 +106,8 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
 
         final OptableTargetingFlowResolver flowResolver = new OptableTargetingFlowResolver(
                 BidderEnrichmentSampler.of(AliasesResolver.of(bidderCatalog), randomSupplier),
-                new TargetingRequestExecutor(optableTargeting, userFpdActivityMask, timeoutFactory, 0.01),
+                new TargetingRequestExecutor(
+                        optableTargeting, userFpdActivityMask, implicitParametersResolver, timeoutFactory, 0.01),
                 0.01);
         rawHook = new OptableRawAuctionRequestHook(
                 new ConfigResolver(mapper, jsonMerger, properties), flowResolver, 0.01);
