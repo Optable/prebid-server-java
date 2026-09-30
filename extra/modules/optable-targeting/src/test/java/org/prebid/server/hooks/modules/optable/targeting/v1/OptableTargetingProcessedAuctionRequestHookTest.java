@@ -228,10 +228,9 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         when(optableTargeting.getTargeting(any(), any(), any(), any()))
                 .thenReturn(Future.succeededFuture(givenTargetingResult()));
         when(invocationContext.moduleContext()).thenReturn(moduleContext);
-        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
         moduleContext.setOptableTargetingCall(
                 targetingRequestExecutor.makeRequest(
-                        auctionRequestPayload,
+                        givenBidRequest(),
                         invocationContext,
                         givenOptableTargetingProperties("key", "tenant", "origin", false),
                         null));
@@ -303,6 +302,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         moduleContext.setEarlyCallInitializationCompleted(false);
 
         when(invocationContext.moduleContext()).thenReturn(moduleContext);
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
         when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of());
 
         // when
@@ -319,7 +319,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
                 .returns(InvocationAction.update, InvocationResult::action)
                 .extracting(InvocationResult::errors).isNull();
         assertThat(moduleContext.getOptableTargetingCall()).isNull();
-        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isFalse();
+        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
     }
 
     @Test

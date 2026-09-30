@@ -61,7 +61,7 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
         }
 
         return optableTargetingFlowResolver.resolveAsyncOptableTargetingFlow(
-                moduleContext, payload, invocationContext, properties, false);
+                moduleContext, payload, invocationContext, properties);
     }
 
     public static Future<InvocationResult<AuctionRequestPayload>> update(
@@ -73,16 +73,6 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
                         .status(InvocationStatus.success)
                         .action(InvocationAction.update)
                         .payloadUpdate(payloadUpdate)
-                        .moduleContext(moduleContext)
-                        .build());
-    }
-
-    public static Future<InvocationResult<AuctionRequestPayload>> success(ModuleContext moduleContext) {
-
-        return Future.succeededFuture(
-                InvocationResultImpl.<AuctionRequestPayload>builder()
-                        .status(InvocationStatus.success)
-                        .action(InvocationAction.no_action)
                         .moduleContext(moduleContext)
                         .build());
     }

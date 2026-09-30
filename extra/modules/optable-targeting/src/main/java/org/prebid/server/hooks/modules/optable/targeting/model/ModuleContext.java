@@ -1,5 +1,6 @@
 package org.prebid.server.hooks.modules.optable.targeting.model;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.vertx.core.Future;
 import lombok.Data;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
@@ -36,6 +37,8 @@ public class ModuleContext {
     private boolean shouldSkipEnrichment;
 
     private boolean isEarlyCallInitializationCompleted = true;
+
+    private JsonNode extUserOptable;
 
     private String id5Signature;
 

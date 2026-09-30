@@ -41,8 +41,8 @@ public class OptableTargetingProcessedAuctionRequestHook implements ProcessedAuc
             if (moduleContext.isEarlyCallInitializationCompleted()) {
                 return success(moduleContext);
             } else {
-                return optableTargetingFlowResolver.resolveAsyncOptableTargetingFlow(
-                        moduleContext, auctionRequestPayload, invocationContext, properties, true);
+                return optableTargetingFlowResolver.resolveDeferredOptableTargetingFlow(
+                        moduleContext, auctionRequestPayload, invocationContext, properties);
             }
         }
 

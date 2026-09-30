@@ -72,6 +72,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
         when(invocationContext.timeout()).thenReturn(timeout);
         when(activityInfrastructure.isAllowed(any(), any())).thenReturn(true);
         when(timeout.remaining()).thenReturn(1000L);
+        when(bidderEnrichmentSampler.hasBidders(any())).thenReturn(true);
     }
 
     private OptableTargetingFlowResolver givenEarlyOptableCallResolver() {
@@ -212,7 +213,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                         final ModuleContext moduleContext = cxt.result();
                         assertThat(moduleContext.isShouldSkipEnrichment()).isFalse();
                         assertThat(moduleContext.getOptableTargetingCall()).isNull();
-                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isFalse();
+                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
                     });
                     vertxTestContext.completeNow();
                 });
