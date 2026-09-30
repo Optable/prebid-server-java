@@ -120,7 +120,7 @@ public class OptableTargetingConfig {
                 new OptableTargetingProcessedAuctionRequestHook(
                         configResolver,
                         earlyOptableCallResolver),
-                new OptableBidderRequestHook(),
+                new OptableBidderRequestHook(earlyOptableCallResolver),
                 new OptableTargetingAuctionResponseHook(
                         configResolver,
                         ObjectMapperProvider.mapper(),

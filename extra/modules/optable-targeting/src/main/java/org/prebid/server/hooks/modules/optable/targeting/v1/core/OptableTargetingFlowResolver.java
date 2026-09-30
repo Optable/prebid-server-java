@@ -1,6 +1,8 @@
 package org.prebid.server.hooks.modules.optable.targeting.v1.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.iab.openrtb.request.BidRequest;
+import com.iab.openrtb.request.User;
 import io.vertx.core.Future;
 import org.apache.commons.collections4.CollectionUtils;
 import org.prebid.server.hooks.execution.v1.InvocationResultImpl;
@@ -17,6 +19,7 @@ import org.prebid.server.hooks.v1.auction.AuctionInvocationContext;
 import org.prebid.server.hooks.v1.auction.AuctionRequestPayload;
 import org.prebid.server.log.ConditionalLogger;
 import org.prebid.server.log.LoggerFactory;
+import org.prebid.server.proto.openrtb.ext.request.ExtUser;
 import org.prebid.server.settings.model.Account;
 
 import java.util.Objects;
@@ -27,6 +30,7 @@ public class OptableTargetingFlowResolver {
     private static final ConditionalLogger conditionalLogger = new ConditionalLogger(
             LoggerFactory.getLogger(OptableTargetingProcessedAuctionRequestHook.class));
 
+    private static final String OPTABLE_FIELD = "optable";
     private static final String AUCTION_NOT_PROPERLY_CONFIGURED =
             "Account not properly configured: tenant and/or origin is missing.";
 
@@ -46,33 +50,85 @@ public class OptableTargetingFlowResolver {
         this.logSamplingRate = logSamplingRate;
     }
 
-    public Future<InvocationResult<AuctionRequestPayload>> resolveAsyncOptableTargetingFlow(
-            ModuleContext moduleContext,
-            AuctionRequestPayload payload,
-            AuctionInvocationContext invocationContext,
-            OptableTargetingProperties properties) {
+    /**
+     * Stored requests and stored imps are merged after the raw auction request stage, so a request that relies on
+     * them may carry neither bidders nor site/app yet. The decision has to wait for the merged request then.
+     */
+    public boolean shouldDeferTargetingCall(BidRequest bidRequest) {
+        return (bidRequest.getSite() == null && bidRequest.getApp() == null)
+                || !bidderEnrichmentSampler.hasBidders(bidRequest);
+    }
 
-        final BidRequest bidRequest = invocationContext.auctionContext().getBidRequest();
+    public void deferTargetingCall(ModuleContext moduleContext, BidRequest bidRequest) {
+        moduleContext.setEnrichmentDeferred(true);
+        // the cleaner strips user.ext.optable at this stage, while the deferred call still needs its ids
+        moduleContext.setExtUserOptable(extUserOptable(bidRequest));
+    }
+
+    public void startTargetingCall(ModuleContext moduleContext,
+                                   BidRequest bidRequest,
+                                   AuctionInvocationContext invocationContext,
+                                   OptableTargetingProperties properties,
+                                   boolean awaitedByBidderRequestHook) {
+
+        if (!PropertiesValidator.isTrafficSourceValid(bidRequest, properties)) {
+            moduleContext.setShouldSkipEnrichment(true);
+            return;
+        }
+
         final Set<String> biddersToEnrich = bidderEnrichmentSampler.sample(bidRequest, properties);
         if (CollectionUtils.isEmpty(biddersToEnrich)) {
-            moduleContext.setEarlyCallInitializationCompleted(false);
-            return update(BidRequestCleaner.instance(), moduleContext);
+            return;
         }
 
         moduleContext.setBiddersToEnrich(biddersToEnrich);
-        final Account account = invocationContext.auctionContext().getAccount();
-        final long crossHookFutureTimeout =
-                hooksExecutionPlan.getOptableTargetingBidderRequestTimeout(account);
+        final Long crossHookFutureTimeout = awaitedByBidderRequestHook
+                ? (Long) hooksExecutionPlan.getOptableTargetingBidderRequestTimeout(
+                        invocationContext.auctionContext().getAccount())
+                : null;
 
-        final Future<TargetingResult> optableTargetingCall = targetingRequestExecutor.makeRequest(
-                payload,
+        moduleContext.setOptableTargetingCall(targetingRequestExecutor.makeRequest(
+                bidRequest,
                 invocationContext,
                 properties,
-                crossHookFutureTimeout);
+                crossHookFutureTimeout));
+    }
 
-        moduleContext.setOptableTargetingCall(optableTargetingCall);
+    public void startDeferredTargetingCall(ModuleContext moduleContext,
+                                           BidRequest mergedBidRequest,
+                                           AuctionInvocationContext invocationContext,
+                                           OptableTargetingProperties properties,
+                                           boolean awaitedByBidderRequestHook) {
 
-        return update(BidRequestCleaner.instance(), moduleContext);
+        final BidRequest bidRequest = withExtUserOptable(mergedBidRequest, moduleContext.getExtUserOptable());
+        moduleContext.setEnrichmentDeferred(false);
+        moduleContext.setExtUserOptable(null);
+        moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
+
+        startTargetingCall(moduleContext, bidRequest, invocationContext, properties, awaitedByBidderRequestHook);
+    }
+
+    private static JsonNode extUserOptable(BidRequest bidRequest) {
+        final User user = bidRequest.getUser();
+        final ExtUser extUser = user != null ? user.getExt() : null;
+        return extUser != null ? extUser.getProperty(OPTABLE_FIELD) : null;
+    }
+
+    private static BidRequest withExtUserOptable(BidRequest bidRequest, JsonNode optable) {
+        if (optable == null) {
+            return bidRequest;
+        }
+
+        final User user = bidRequest.getUser();
+        final ExtUser extUser = user != null ? user.getExt() : null;
+        final ExtUser restoredExtUser = extUser != null ? extUser.toBuilder().build() : ExtUser.builder().build();
+        if (extUser != null) {
+            restoredExtUser.addProperties(extUser.getProperties());
+        }
+        restoredExtUser.addProperty(OPTABLE_FIELD, optable);
+
+        final User restoredUser = (user != null ? user.toBuilder() : User.builder()).ext(restoredExtUser).build();
+        return bidRequest.toBuilder().user(restoredUser).build();
     }
 
     /**
@@ -157,23 +213,10 @@ public class OptableTargetingFlowResolver {
         }
 
         return targetingRequestExecutor.makeRequest(
-                payload,
+                payload.bidRequest(),
                 invocationContext,
                 properties,
                 null);
-    }
-
-    private static Future<InvocationResult<AuctionRequestPayload>> update(
-            PayloadUpdate<AuctionRequestPayload> payloadUpdate,
-            ModuleContext moduleContext) {
-
-        return Future.succeededFuture(
-                InvocationResultImpl.<AuctionRequestPayload>builder()
-                        .status(InvocationStatus.success)
-                        .action(InvocationAction.update)
-                        .payloadUpdate(payloadUpdate)
-                        .moduleContext(moduleContext)
-                        .build());
     }
 
     private static Future<InvocationResult<AuctionRequestPayload>> updateWithAnalytics(

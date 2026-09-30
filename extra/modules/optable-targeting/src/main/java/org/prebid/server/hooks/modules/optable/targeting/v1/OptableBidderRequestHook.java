@@ -11,6 +11,7 @@ import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.Targeting
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.AnalyticTagsResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderRequestEnricher;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.Id5Resolver;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargetingFlowResolver;
 import org.prebid.server.hooks.v1.InvocationAction;
 import org.prebid.server.hooks.v1.InvocationResult;
 import org.prebid.server.hooks.v1.InvocationStatus;
@@ -20,6 +21,7 @@ import org.prebid.server.hooks.v1.bidder.BidderInvocationContext;
 import org.prebid.server.hooks.v1.bidder.BidderRequestHook;
 import org.prebid.server.hooks.v1.bidder.BidderRequestPayload;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
@@ -28,12 +30,28 @@ public class OptableBidderRequestHook implements BidderRequestHook {
 
     public static final String CODE = "optable-targeting-bidder-request-hook";
 
+    private final OptableTargetingFlowResolver flowResolver;
+
+    public OptableBidderRequestHook(OptableTargetingFlowResolver flowResolver) {
+        this.flowResolver = Objects.requireNonNull(flowResolver);
+    }
+
     @Override
     public Future<InvocationResult<BidderRequestPayload>> call(BidderRequestPayload bidderRequestPayload,
                                                                BidderInvocationContext invocationContext) {
 
         final ModuleContext moduleContext = ModuleContext.of(invocationContext);
         final OptableTargetingProperties properties = moduleContext.getOptableTargetingProperties();
+
+        // the payload here is already narrowed and masked for a single bidder, hence the auction-level request
+        if (moduleContext.isEnrichmentDeferred()) {
+            flowResolver.startDeferredTargetingCall(
+                    moduleContext,
+                    invocationContext.auctionContext().getBidRequest(),
+                    invocationContext,
+                    properties,
+                    false);
+        }
 
         final Set<String> biddersToEnrich = moduleContext.getBiddersToEnrich();
         if (CollectionUtils.isEmpty(biddersToEnrich)

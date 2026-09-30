@@ -18,13 +18,13 @@ public class OptableTargetingProcessedAuctionRequestHook implements ProcessedAuc
 
     private final ConfigResolver configResolver;
 
-    private final OptableTargetingFlowResolver earlyOptableCallResolver;
+    private final OptableTargetingFlowResolver flowResolver;
 
     public OptableTargetingProcessedAuctionRequestHook(ConfigResolver configResolver,
-                                                       OptableTargetingFlowResolver earlyOptableCallResolver) {
+                                                       OptableTargetingFlowResolver flowResolver) {
 
         this.configResolver = Objects.requireNonNull(configResolver);
-        this.earlyOptableCallResolver = Objects.requireNonNull(earlyOptableCallResolver);
+        this.flowResolver = Objects.requireNonNull(flowResolver);
     }
 
     @Override
@@ -34,12 +34,12 @@ public class OptableTargetingProcessedAuctionRequestHook implements ProcessedAuc
         final ModuleContext moduleContext = ModuleContext.of(invocationContext);
         final OptableTargetingProperties properties = configResolver.resolve(invocationContext.accountConfig());
 
-        if (moduleContext.isEarlyNetworkCallEnabled() && !moduleContext.isEarlyCallInitializationCompleted()) {
-            return earlyOptableCallResolver.resolveAsyncOptableTargetingFlow(
-                    moduleContext, auctionRequestPayload, invocationContext, properties);
+        if (moduleContext.isEnrichmentDeferred()) {
+            flowResolver.startDeferredTargetingCall(
+                    moduleContext, auctionRequestPayload.bidRequest(), invocationContext, properties, true);
         }
 
-        return earlyOptableCallResolver.resolveOptableTargetingFlow(
+        return flowResolver.resolveOptableTargetingFlow(
                 auctionRequestPayload, invocationContext, moduleContext, properties);
     }
 

@@ -18,6 +18,7 @@ import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.Status;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargetingFlowResolver;
 import org.prebid.server.hooks.v1.InvocationAction;
 import org.prebid.server.hooks.v1.InvocationResult;
 import org.prebid.server.hooks.v1.InvocationStatus;
@@ -43,11 +44,14 @@ public class OptableBidderRequestHookTest extends BaseOptableTest {
     @Mock
     private BidderRequestPayload bidderRequestPayload;
 
+    @Mock
+    private OptableTargetingFlowResolver flowResolver;
+
     private OptableBidderRequestHook target;
 
     @BeforeEach
     public void setUp() {
-        target = new OptableBidderRequestHook();
+        target = new OptableBidderRequestHook(flowResolver);
         when(bidderRequestPayload.bidRequest()).thenReturn(givenBidRequest());
         when(invocationContext.bidder()).thenReturn("bidder1");
     }

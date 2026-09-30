@@ -20,7 +20,6 @@ import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTar
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
 import org.prebid.server.hooks.modules.optable.targeting.v1.OptableTargetingModule;
 import org.prebid.server.hooks.v1.auction.AuctionInvocationContext;
-import org.prebid.server.hooks.v1.auction.AuctionRequestPayload;
 
 import java.util.Objects;
 
@@ -42,18 +41,19 @@ public class TargetingRequestExecutor {
         this.logSamplingRate = logSamplingRate;
     }
 
-    public Future<TargetingResult> makeRequest(AuctionRequestPayload payload,
+    public Future<TargetingResult> makeRequest(BidRequest originalBidRequest,
                                                AuctionInvocationContext invocationContext,
                                                OptableTargetingProperties properties,
                                                Long apiTimeout) {
 
-        final BidRequest bidRequest = applyActivityRestrictions(payload.bidRequest(), invocationContext);
+        final BidRequest bidRequest = applyActivityRestrictions(originalBidRequest, invocationContext);
 
         final Timeout timeout = apiTimeout == null
                 ? getHookTimeout(invocationContext)
                 : timeoutFactory.create(getHookTimeout(invocationContext).remaining() + apiTimeout);
         final OptableAttributes attributes = OptableAttributesResolver.resolveAttributes(
                 invocationContext.auctionContext(),
+                originalBidRequest,
                 properties.getTimeout(),
                 logSamplingRate);
 

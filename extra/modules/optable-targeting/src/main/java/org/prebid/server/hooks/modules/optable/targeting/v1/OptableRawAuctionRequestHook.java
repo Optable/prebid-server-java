@@ -29,15 +29,15 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
     public static final String CODE = "optable-targeting-raw-auction-request-hook";
 
     private final ConfigResolver configResolver;
-    private final OptableTargetingFlowResolver earlyOptableCallResolver;
+    private final OptableTargetingFlowResolver flowResolver;
     private final double logSamplingRate;
 
     public OptableRawAuctionRequestHook(ConfigResolver configResolver,
-                                        OptableTargetingFlowResolver earlyOptableCallResolver,
+                                        OptableTargetingFlowResolver flowResolver,
                                         double logSamplingRate) {
 
         this.configResolver = Objects.requireNonNull(configResolver);
-        this.earlyOptableCallResolver = earlyOptableCallResolver;
+        this.flowResolver = Objects.requireNonNull(flowResolver);
         this.logSamplingRate = logSamplingRate;
     }
 
@@ -61,15 +61,14 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
             return update(BidRequestCleaner.instance(), moduleContext);
         }
 
-        final BidRequest bidRequest = invocationContext.auctionContext().getBidRequest();
-        if (!PropertiesValidator.isTrafficSourceValid(bidRequest, properties)) {
-            moduleContext.setShouldSkipEnrichment(true);
-            moduleContext.setEarlyCallInitializationCompleted(false);
-            return update(BidRequestCleaner.instance(), moduleContext);
+        final BidRequest bidRequest = payload.bidRequest();
+        if (flowResolver.shouldDeferTargetingCall(bidRequest)) {
+            flowResolver.deferTargetingCall(moduleContext, bidRequest);
+        } else {
+            flowResolver.startTargetingCall(moduleContext, bidRequest, invocationContext, properties, true);
         }
 
-        return earlyOptableCallResolver.resolveAsyncOptableTargetingFlow(
-                moduleContext, payload, invocationContext, properties);
+        return update(BidRequestCleaner.instance(), moduleContext);
     }
 
     public static Future<InvocationResult<AuctionRequestPayload>> update(

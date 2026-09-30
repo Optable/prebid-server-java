@@ -31,11 +31,18 @@ public class OptableAttributesResolver {
                                                       Long timeout,
                                                       double logSamplingRate) {
 
+        return resolveAttributes(auctionContext, auctionContext.getBidRequest(), timeout, logSamplingRate);
+    }
+
+    public static OptableAttributes resolveAttributes(AuctionContext auctionContext,
+                                                      BidRequest bidRequest,
+                                                      Long timeout,
+                                                      double logSamplingRate) {
+
         final GppContext.Scope gppScope = Optional.ofNullable(auctionContext.getGppContext())
                 .map(GppContext::scope)
                 .orElse(null);
 
-        final BidRequest bidRequest = auctionContext.getBidRequest();
         final Optional<Regs> regs = Optional.ofNullable(bidRequest.getRegs());
         final Integer gdpr = regs
                 .map(Regs::getGdpr)
@@ -44,9 +51,9 @@ public class OptableAttributesResolver {
                         .orElse(null));
 
         final OptableAttributes.OptableAttributesBuilder builder = OptableAttributes.builder()
-                .ips(resolveIp(auctionContext))
-                .userAgent(resolveUserAgent(auctionContext))
-                .app(resolveApp(auctionContext))
+                .ips(resolveIp(auctionContext, bidRequest))
+                .userAgent(resolveUserAgent(bidRequest))
+                .app(resolveApp(bidRequest))
                 .timeout(timeout);
 
         if (gdpr != null && gdpr > 0) {
@@ -80,20 +87,20 @@ public class OptableAttributesResolver {
         return builder.build();
     }
 
-    private static App resolveApp(AuctionContext auctionContext) {
-        final com.iab.openrtb.request.App app = auctionContext.getBidRequest().getApp();
+    private static App resolveApp(BidRequest bidRequest) {
+        final com.iab.openrtb.request.App app = bidRequest.getApp();
         return app != null ? App.of(app.getBundle(), app.getVer()) : null;
     }
 
-    public static String resolveUserAgent(AuctionContext auctionContext) {
-        final Device device = auctionContext.getBidRequest().getDevice();
+    private static String resolveUserAgent(BidRequest bidRequest) {
+        final Device device = bidRequest.getDevice();
         return device != null ? device.getUa() : null;
     }
 
-    private static List<String> resolveIp(AuctionContext auctionContext) {
+    private static List<String> resolveIp(AuctionContext auctionContext, BidRequest bidRequest) {
         final List<String> result = new ArrayList<>();
 
-        final Optional<Device> deviceOpt = Optional.ofNullable(auctionContext.getBidRequest().getDevice());
+        final Optional<Device> deviceOpt = Optional.ofNullable(bidRequest.getDevice());
         deviceOpt.map(Device::getIp).ifPresent(result::add);
         deviceOpt.map(Device::getIpv6).ifPresent(result::add);
 

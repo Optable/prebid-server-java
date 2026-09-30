@@ -17,6 +17,7 @@ import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.execution.model.ExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
+import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
@@ -72,6 +73,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
         when(invocationContext.timeout()).thenReturn(timeout);
         when(activityInfrastructure.isAllowed(any(), any())).thenReturn(true);
         when(timeout.remaining()).thenReturn(1000L);
+        when(bidderEnrichmentSampler.hasBidders(any())).thenReturn(true);
     }
 
     private OptableTargetingFlowResolver givenEarlyOptableCallResolver() {
@@ -111,7 +113,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                         final ModuleContext moduleContext = cxt.result();
                         assertThat(moduleContext.getOptableTargetingCall()).isNotNull();
                         assertThat(moduleContext.getOptableTargetingCall().result()).isNotNull();
-                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
+                        assertThat(moduleContext.isEnrichmentDeferred()).isFalse();
                     });
                     vertxTestContext.completeNow();
                 });
@@ -146,7 +148,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                         final ModuleContext moduleContext = cxt.result();
                         assertThat(moduleContext.getOptableTargetingCall()).isNull();
                         assertThat(moduleContext.isEarlyNetworkCallEnabled()).isTrue();
-                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
+                        assertThat(moduleContext.isEnrichmentDeferred()).isFalse();
                     });
                     vertxTestContext.completeNow();
                 });
@@ -154,7 +156,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
 
     @SneakyThrows
     @Test
-    public void shouldNotInjectEarlyNetworkCallWhenTrafficSourceIsInvalid(VertxTestContext vertxTestContext) {
+    public void shouldDeferTargetingCallWhenRequestHasNeitherSiteNorApp(VertxTestContext vertxTestContext) {
         // given
         when(invocationContext.accountConfig())
                 .thenReturn(givenAccountConfig("key", "tenant", "origin", true));
@@ -181,9 +183,9 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                 .onComplete(cxt -> {
                     vertxTestContext.verify(() -> {
                         final ModuleContext moduleContext = cxt.result();
-                        assertThat(moduleContext.isShouldSkipEnrichment()).isTrue();
+                        assertThat(moduleContext.isShouldSkipEnrichment()).isFalse();
                         assertThat(moduleContext.getOptableTargetingCall()).isNull();
-                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isFalse();
+                        assertThat(moduleContext.isEnrichmentDeferred()).isTrue();
                     });
                     vertxTestContext.completeNow();
                 });
@@ -212,9 +214,55 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                         final ModuleContext moduleContext = cxt.result();
                         assertThat(moduleContext.isShouldSkipEnrichment()).isFalse();
                         assertThat(moduleContext.getOptableTargetingCall()).isNull();
-                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isFalse();
+                        assertThat(moduleContext.isEnrichmentDeferred()).isFalse();
                     });
                     vertxTestContext.completeNow();
                 });
+    }
+
+    @Test
+    public void shouldSkipEnrichmentWhenTrafficSourceIsDisabled() {
+        // given
+        final OptableTargetingProperties properties = givenOptableTargetingProperties(false);
+        properties.setEnrichWeb(false);
+        target = new OptableRawAuctionRequestHook(
+                new ConfigResolver(mapper, jsonMerger, properties), givenEarlyOptableCallResolver(), 0.01);
+        when(invocationContext.accountConfig()).thenReturn(mapper.valueToTree(properties));
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
+
+        // when
+        final Future<InvocationResult<AuctionRequestPayload>> result =
+                target.call(auctionRequestPayload, invocationContext);
+
+        // then
+        final ModuleContext moduleContext = (ModuleContext) result.result().moduleContext();
+        assertThat(moduleContext.isShouldSkipEnrichment()).isTrue();
+        assertThat(moduleContext.isEnrichmentDeferred()).isFalse();
+        assertThat(moduleContext.getOptableTargetingCall()).isNull();
+    }
+
+    @Test
+    public void shouldDeferTargetingCallAndKeepOptableIdsWhenRequestHasNoBidders() {
+        // given
+        when(invocationContext.accountConfig())
+                .thenReturn(givenAccountConfig("key", "tenant", "origin", true));
+        final BidRequest bidRequest = givenBidRequest();
+        when(auctionRequestPayload.bidRequest()).thenReturn(bidRequest);
+        when(bidderEnrichmentSampler.hasBidders(any())).thenReturn(false);
+
+        // when
+        final Future<InvocationResult<AuctionRequestPayload>> result =
+                target.call(auctionRequestPayload, invocationContext);
+
+        // then
+        final ModuleContext moduleContext = (ModuleContext) result.result().moduleContext();
+        assertThat(moduleContext.isEnrichmentDeferred()).isTrue();
+        assertThat(moduleContext.isShouldSkipEnrichment()).isFalse();
+        assertThat(moduleContext.getOptableTargetingCall()).isNull();
+        assertThat(moduleContext.getExtUserOptable().get("email").asText()).isEqualTo("email");
+
+        final BidRequest cleaned = result.result().payloadUpdate().apply(auctionRequestPayload).bidRequest();
+        assertThat(cleaned.getUser().getExt().getProperty("optable")).isNull();
     }
 }
