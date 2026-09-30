@@ -15,11 +15,9 @@ import org.prebid.server.activity.infrastructure.ActivityInfrastructure;
 import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
-import org.prebid.server.hooks.execution.model.ExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
-import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargetingFlowResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.TargetingRequestExecutor;
@@ -33,6 +31,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -51,6 +51,10 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
     private AuctionInvocationContext invocationContext;
     @Mock
     private Timeout timeout;
+    @Mock
+    private Timeout apiTimeout;
+    @Mock
+    private Timeout auctionTimeout;
     @Mock
     private TimeoutFactory timeoutFactory;
     @Mock
@@ -80,7 +84,6 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
         return new OptableTargetingFlowResolver(
                 bidderEnrichmentSampler,
                 targetingRequestExecutor,
-                CompositeHookExecutionPlan.of(ExecutionPlan.empty()),
                 0.01);
     }
 
@@ -264,5 +267,39 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
 
         final BidRequest cleaned = result.result().payloadUpdate().apply(auctionRequestPayload).bidRequest();
         assertThat(cleaned.getUser().getExt().getProperty("optable")).isNull();
+    }
+
+    @Test
+    public void shouldBoundEarlyCallByApiTimeoutWhenConfigured() {
+        // given
+        final OptableTargetingProperties properties = givenOptableTargetingProperties(false);
+        properties.setApiTimeout(300L);
+        when(invocationContext.accountConfig()).thenReturn(mapper.valueToTree(properties));
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
+        when(timeoutFactory.create(300L)).thenReturn(apiTimeout);
+
+        // when
+        target.call(auctionRequestPayload, invocationContext);
+
+        // then
+        verify(optableTargeting).getTargeting(any(), any(), any(), same(apiTimeout));
+    }
+
+    @Test
+    public void shouldBoundEarlyCallByAuctionTimeoutWhenApiTimeoutIsNotConfigured() {
+        // given
+        when(invocationContext.accountConfig())
+                .thenReturn(givenAccountConfig("key", "tenant", "origin", true));
+        when(invocationContext.auctionContext()).thenReturn(
+                givenAuctionContext(activityInfrastructure, auctionTimeout));
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
+
+        // when
+        target.call(auctionRequestPayload, invocationContext);
+
+        // then
+        verify(optableTargeting).getTargeting(any(), any(), any(), same(auctionTimeout));
     }
 }

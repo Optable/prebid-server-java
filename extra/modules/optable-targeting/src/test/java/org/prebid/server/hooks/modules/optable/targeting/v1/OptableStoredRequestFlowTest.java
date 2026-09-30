@@ -19,14 +19,12 @@ import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
 import org.prebid.server.bidder.BidderCatalog;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
-import org.prebid.server.hooks.execution.model.ExecutionPlan;
 import org.prebid.server.hooks.execution.v1.auction.AuctionRequestPayloadImpl;
 import org.prebid.server.hooks.execution.v1.bidder.BidderRequestPayloadImpl;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.AliasesResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
-import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargeting;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargetingFlowResolver;
@@ -106,7 +104,6 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
         final OptableTargetingFlowResolver flowResolver = new OptableTargetingFlowResolver(
                 BidderEnrichmentSampler.of(AliasesResolver.of(bidderCatalog), randomSupplier),
                 new TargetingRequestExecutor(optableTargeting, userFpdActivityMask, timeoutFactory, 0.01),
-                CompositeHookExecutionPlan.of(ExecutionPlan.empty()),
                 0.01);
         rawHook = new OptableRawAuctionRequestHook(
                 new ConfigResolver(mapper, jsonMerger, properties), flowResolver, 0.01);

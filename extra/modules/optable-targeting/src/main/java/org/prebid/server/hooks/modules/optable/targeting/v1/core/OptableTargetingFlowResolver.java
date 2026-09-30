@@ -20,7 +20,6 @@ import org.prebid.server.hooks.v1.auction.AuctionRequestPayload;
 import org.prebid.server.log.ConditionalLogger;
 import org.prebid.server.log.LoggerFactory;
 import org.prebid.server.proto.openrtb.ext.request.ExtUser;
-import org.prebid.server.settings.model.Account;
 
 import java.util.Objects;
 import java.util.Set;
@@ -36,17 +35,14 @@ public class OptableTargetingFlowResolver {
 
     private final BidderEnrichmentSampler bidderEnrichmentSampler;
     private final TargetingRequestExecutor targetingRequestExecutor;
-    private final CompositeHookExecutionPlan hooksExecutionPlan;
     private final double logSamplingRate;
 
     public OptableTargetingFlowResolver(BidderEnrichmentSampler bidderEnrichmentSampler,
                                         TargetingRequestExecutor targetingRequestExecutor,
-                                        CompositeHookExecutionPlan hooksExecutionPlan,
                                         double logSamplingRate) {
 
         this.bidderEnrichmentSampler = Objects.requireNonNull(bidderEnrichmentSampler);
         this.targetingRequestExecutor = Objects.requireNonNull(targetingRequestExecutor);
-        this.hooksExecutionPlan = hooksExecutionPlan;
         this.logSamplingRate = logSamplingRate;
     }
 
@@ -69,7 +65,7 @@ public class OptableTargetingFlowResolver {
                                    BidRequest bidRequest,
                                    AuctionInvocationContext invocationContext,
                                    OptableTargetingProperties properties,
-                                   boolean awaitedByBidderRequestHook) {
+                                   boolean outlivesHook) {
 
         if (!PropertiesValidator.isTrafficSourceValid(bidRequest, properties)) {
             moduleContext.setShouldSkipEnrichment(true);
@@ -82,30 +78,25 @@ public class OptableTargetingFlowResolver {
         }
 
         moduleContext.setBiddersToEnrich(biddersToEnrich);
-        final Long crossHookFutureTimeout = awaitedByBidderRequestHook
-                ? (Long) hooksExecutionPlan.getOptableTargetingBidderRequestTimeout(
-                        invocationContext.auctionContext().getAccount())
-                : null;
-
         moduleContext.setOptableTargetingCall(targetingRequestExecutor.makeRequest(
                 bidRequest,
                 invocationContext,
                 properties,
-                crossHookFutureTimeout));
+                outlivesHook));
     }
 
     public void startDeferredTargetingCall(ModuleContext moduleContext,
                                            BidRequest mergedBidRequest,
                                            AuctionInvocationContext invocationContext,
                                            OptableTargetingProperties properties,
-                                           boolean awaitedByBidderRequestHook) {
+                                           boolean outlivesHook) {
 
         final BidRequest bidRequest = withExtUserOptable(mergedBidRequest, moduleContext.getExtUserOptable());
         moduleContext.setEnrichmentDeferred(false);
         moduleContext.setExtUserOptable(null);
         moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
 
-        startTargetingCall(moduleContext, bidRequest, invocationContext, properties, awaitedByBidderRequestHook);
+        startTargetingCall(moduleContext, bidRequest, invocationContext, properties, outlivesHook);
     }
 
     private static JsonNode extUserOptable(BidRequest bidRequest) {
@@ -146,22 +137,13 @@ public class OptableTargetingFlowResolver {
             return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
         }
 
-        final Account account = invocationContext.auctionContext().getAccount();
-        final boolean hasRawAuctionRequestHook = hooksExecutionPlan.hasRawAuctionRequestHook(account);
-        final boolean hasBidderRequestHook = hooksExecutionPlan.hasBidderRequestHook(account);
-
-        if (hasRawAuctionRequestHook && hasBidderRequestHook) {
+        // once the raw auction request hook has run, enrichment belongs to the bidder request hook
+        if (moduleContext.isEarlyNetworkCallEnabled()) {
             return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
         }
 
-        final Future<TargetingResult> optableTargetingCall = hasRawAuctionRequestHook
-                ? resolveEarlyNetworkCall(moduleContext)
-                : resolvePreEarlyNetworkCall(auctionRequestPayload, invocationContext, moduleContext, properties);
-
-        if (optableTargetingCall == null) {
-            moduleContext.failWithExecutionTime(calcAPICallExecutionTime(moduleContext));
-            return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
-        }
+        final Future<TargetingResult> optableTargetingCall =
+                resolvePreEarlyNetworkCall(auctionRequestPayload, invocationContext, moduleContext, properties);
 
         return optableTargetingCall
                 .compose(targetingResult -> {
@@ -189,10 +171,6 @@ public class OptableTargetingFlowResolver {
         return updateWithAnalytics(payloadUpdate, moduleContext);
     }
 
-    private Future<TargetingResult> resolveEarlyNetworkCall(ModuleContext moduleContext) {
-        return moduleContext.getOptableTargetingCall();
-    }
-
     private static long calcAPICallExecutionTime(ModuleContext moduleContext) {
         return System.currentTimeMillis() - moduleContext.getCallTargetingAPITimestamp();
     }
@@ -216,7 +194,7 @@ public class OptableTargetingFlowResolver {
                 payload.bidRequest(),
                 invocationContext,
                 properties,
-                null);
+                false);
     }
 
     private static Future<InvocationResult<AuctionRequestPayload>> updateWithAnalytics(

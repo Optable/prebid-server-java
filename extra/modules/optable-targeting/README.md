@@ -163,23 +163,29 @@ be replaced with the `raw-auction-request` and `bidder-request` hooks shown abov
 }
 ```
 
-The `processed-auction-request` hook is still supported for backwards compatibility. It detects whether the new hooks
-(`raw-auction-request` and `bidder-request`) are present in the execution plan. If both are active, it passes through
-immediately without blocking the pipeline. If the new hooks are absent, it falls back to the legacy synchronous
-behavior. This means the legacy fragment can be kept during migration without negating the latency benefit of the new
+The `processed-auction-request` hook is still supported for backwards compatibility. When the `raw-auction-request`
+hook has run for the request, it passes through immediately without blocking the pipeline, and the enrichment is left
+to the `bidder-request` hook - so the `raw-auction-request` hook must always be configured together with the
+`bidder-request` hook. When the `raw-auction-request` hook is absent, it falls back to the legacy synchronous behavior.
+This means the legacy fragment can be kept during migration without negating the latency benefit of the new
 configuration.
 
 ### Timeout considerations
 
-The `bidder-request` hook timeout is used as the timeout budget for the Optable Targeting API call Future that is
-initiated in the `raw-auction-request` stage. The API call runs in parallel with other auction processing, so the
-effective wait time at the `bidder-request` stage is typically much shorter than the full API roundtrip. The
-`raw-auction-request` hook timeout only needs to cover its own lightweight setup (validation, sampling) and can be kept
-short.
+The Optable Targeting API call is initiated in the `raw-auction-request` stage and runs in parallel with other auction
+processing, so the effective wait time at the `bidder-request` stage is typically much shorter than the full API
+roundtrip. There are two limits on it:
 
-**Note:** Do not confuse hook timeout value with the module timeout parameter which is optional. The hook timeout value
-would depend on the cloud/region where the PBS instance is hosted and the latency to reach the Optable's servers. This
-will need to be verified experimentally upon deployment.
+* the `api-timeout` module parameter limits the call itself. When it is not set, the call is limited by the time
+  remaining for the auction (`tmax`).
+* the `bidder-request` hook timeout limits how long a bidder request waits for the result of the call.
+
+The `raw-auction-request` hook timeout only needs to cover its own lightweight setup (validation, sampling) and can be
+kept short.
+
+**Note:** Do not confuse these with the module `timeout` parameter, which is an optional hint passed to the Targeting
+API. The `api-timeout` and the hook timeout values would depend on the cloud/region where the PBS instance is hosted
+and the latency to reach the Optable's servers. This will need to be verified experimentally upon deployment.
 
 The timeout value for the `auction-response` can be set to 10 ms - usually it will be sub-millisecond time as there are
 no HTTP calls made in this hook - Optable-specific keywords are cached on earlier stages and retrieved from the module
@@ -207,6 +213,7 @@ would result in this nesting in the JSON configuration:
 | ppid-mapping                   | no       | map     | none          | This specifies PPID source (`user.ext.eids[].source`) to a custom identifier prefix mapping, f.e. `{"example.com" : "c"}`. See the section on ID Mapping below for more detail.                                                                                                                                                                                                                                            |
 | adserver-targeting             | no       | boolean | false         | If set to true - will add the Optable-specific adserver targeting keywords into the PBS response for every `seatbid[].bid[].ext.prebid.targeting`                                                                                                                                                                                                                                                                          |
 | timeout                        | no       | integer | none          | A soft timeout (in ms) sent as a hint to the Targeting API endpoint to limit the request times to Optable's external tokenizer services                                                                                                                                                                                                                                                                                    |
+| api-timeout                    | no       | integer | none          | A hard timeout (in ms) for the Targeting API call that is started by the `raw-auction-request` hook. When not set the call is limited by the time remaining for the auction. See Timeout considerations above.                                                                                                                                                                                                 |
 | id-prefix-order                | no       | string  | none          | An optional string of comma separated id prefixes that prioritizes and specifies the order in which ids are provided to Targeting API in a query string. F.e. "c,c1,id5" will guarantee that Targeting API will see id=c:...,c1:...,id5:... if these ids are provided. id-prefixes not mentioned in this list will be added in arbitrary order after the priority prefix ids. This affects Targeting API processing logic  |
 | hid-prefixes                   | no       | string  | none          | An optional string of comma separated id prefixes that should additionally be sent to the Targeting API as resolver hints in `hid=prefix:value` query parameters. See the section on Resolver Hints (hid) below for more detail.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | enrichment-percentage          | no       | integer | 100           | Default percentage (0-100) of bid requests per bidder that will receive enrichment data. Set to 100 to enrich all requests, 0 to disable enrichment by default.                                                                                                                                                                                                                                                            |
