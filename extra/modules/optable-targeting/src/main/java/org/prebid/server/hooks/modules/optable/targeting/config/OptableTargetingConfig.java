@@ -116,7 +116,8 @@ public class OptableTargetingConfig {
                         logSamplingRate),
                 new OptableTargetingProcessedAuctionRequestHook(
                         configResolver,
-                        flowResolver),
+                        flowResolver,
+                        logSamplingRate),
                 new OptableBidderRequestHook(flowResolver),
                 new OptableTargetingAuctionResponseHook(
                         configResolver,

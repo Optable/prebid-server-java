@@ -16,6 +16,7 @@ import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
+import org.prebid.server.hooks.modules.optable.targeting.model.Status;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
@@ -32,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -301,5 +303,50 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
 
         // then
         verify(optableTargeting).getTargeting(any(), any(), any(), same(auctionTimeout));
+    }
+
+    @Test
+    public void shouldReturnCleanedUpPayloadWhenTargetingCallCanNotBeInitiated() {
+        // given
+        final ConfigResolver failingConfigResolver = mock(ConfigResolver.class);
+        when(failingConfigResolver.resolve(any())).thenThrow(new IllegalStateException("failure"));
+        target = new OptableRawAuctionRequestHook(failingConfigResolver, givenEarlyOptableCallResolver(), 0.01);
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+
+        // when
+        final Future<InvocationResult<AuctionRequestPayload>> future =
+                target.call(auctionRequestPayload, invocationContext);
+
+        // then
+        assertThat(future.succeeded()).isTrue();
+        final InvocationResult<AuctionRequestPayload> result = future.result();
+        final ModuleContext moduleContext = (ModuleContext) result.moduleContext();
+        assertThat(moduleContext.getEnrichRequestStatus().getStatus()).isEqualTo(Status.FAIL);
+        assertThat(moduleContext.getOptableTargetingCall()).isNull();
+        assertThat(result.payloadUpdate().apply(auctionRequestPayload)
+                .bidRequest().getUser().getExt().getProperty("optable"))
+                .isNull();
+    }
+
+    @Test
+    public void shouldReturnCleanedUpPayloadWhenTargetingRequestFailsToStart() {
+        // given
+        when(invocationContext.accountConfig())
+                .thenReturn(givenAccountConfig("key", "tenant", "origin", true));
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
+        when(optableTargeting.getTargeting(any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("failure"));
+
+        // when
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
+
+        // then
+        final ModuleContext moduleContext = (ModuleContext) result.moduleContext();
+        assertThat(moduleContext.getEnrichRequestStatus().getStatus()).isEqualTo(Status.FAIL);
+        assertThat(moduleContext.getBiddersToEnrich()).isNull();
+        assertThat(moduleContext.getOptableTargetingCall()).isNull();
+        assertThat(result.payloadUpdate()).isNotNull();
     }
 }

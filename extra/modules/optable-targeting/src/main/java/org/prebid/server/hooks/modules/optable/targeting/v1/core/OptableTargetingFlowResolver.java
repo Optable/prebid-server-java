@@ -77,12 +77,14 @@ public class OptableTargetingFlowResolver {
             return;
         }
 
-        moduleContext.setBiddersToEnrich(biddersToEnrich);
-        moduleContext.setOptableTargetingCall(targetingRequestExecutor.makeRequest(
+        final Future<TargetingResult> optableTargetingCall = targetingRequestExecutor.makeRequest(
                 bidRequest,
                 invocationContext,
                 properties,
-                outlivesHook));
+                outlivesHook);
+
+        moduleContext.setBiddersToEnrich(biddersToEnrich);
+        moduleContext.setOptableTargetingCall(optableTargetingCall);
     }
 
     public void startDeferredTargetingCall(ModuleContext moduleContext,
@@ -154,6 +156,11 @@ public class OptableTargetingFlowResolver {
                     moduleContext.failWithExecutionTime(calcAPICallExecutionTime(moduleContext));
                     return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
                 });
+    }
+
+    public Future<InvocationResult<AuctionRequestPayload>> failed(ModuleContext moduleContext) {
+        moduleContext.failWithExecutionTime(calcAPICallExecutionTime(moduleContext));
+        return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
     }
 
     private Future<InvocationResult<AuctionRequestPayload>> enrichPayload(
