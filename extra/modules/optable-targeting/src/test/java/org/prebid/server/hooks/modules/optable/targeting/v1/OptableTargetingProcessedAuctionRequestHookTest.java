@@ -27,6 +27,7 @@ import org.prebid.server.hooks.execution.v1.auction.AuctionRequestPayloadImpl;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.Status;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidRequestCleaner;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
@@ -47,6 +48,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -90,7 +92,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         targetingRequestExecutor = new TargetingRequestExecutor(
                 optableTargeting, userFpdActivityMask, timeoutFactory, 0.01);
         target = new OptableTargetingProcessedAuctionRequestHook(
-                configResolver, givenFlowResolver(ExecutionPlan.empty()));
+                configResolver, givenFlowResolver(ExecutionPlan.empty()), 0.01);
 
         when(invocationContext.accountConfig()).thenReturn(givenAccountConfig(true));
         when(invocationContext.auctionContext()).thenReturn(
@@ -224,7 +226,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         moduleContext.setEarlyCallInitializationCompleted(true);
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
-                givenFlowResolver(givenExecutionPlan(true, false)));
+                givenFlowResolver(givenExecutionPlan(true, false)), 0.01);
         when(optableTargeting.getTargeting(any(), any(), any(), any()))
                 .thenReturn(Future.succeededFuture(givenTargetingResult()));
         when(invocationContext.moduleContext()).thenReturn(moduleContext);
@@ -327,7 +329,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         // given
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
-                givenFlowResolver(givenExecutionPlan(false, false)));
+                givenFlowResolver(givenExecutionPlan(false, false)), 0.01);
         when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
         when(optableTargeting.getTargeting(any(), any(), any(), any()))
                 .thenReturn(Future.succeededFuture(givenTargetingResult()));
@@ -364,7 +366,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         // given
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
-                givenFlowResolver(givenExecutionPlan(false, true)));
+                givenFlowResolver(givenExecutionPlan(false, true)), 0.01);
         when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
         when(optableTargeting.getTargeting(any(), any(), any(), any()))
                 .thenReturn(Future.succeededFuture(givenTargetingResult()));
@@ -401,7 +403,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         // given
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
-                givenFlowResolver(givenExecutionPlan(true, true)));
+                givenFlowResolver(givenExecutionPlan(true, true)), 0.01);
         when(invocationContext.moduleContext()).thenReturn(new ModuleContext());
 
         // when
@@ -433,7 +435,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
                 jsonMerger,
                 givenOptableTargetingProperties("key", "tenant", null, false));
         target = new OptableTargetingProcessedAuctionRequestHook(
-                configResolver, givenFlowResolver(ExecutionPlan.empty()));
+                configResolver, givenFlowResolver(ExecutionPlan.empty()), 0.01);
         when(invocationContext.accountConfig())
                 .thenReturn(givenAccountConfig("key", "tenant", null, true));
 
@@ -462,7 +464,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
                 jsonMerger,
                 givenOptableTargetingProperties("key", null, "origin", false));
         target = new OptableTargetingProcessedAuctionRequestHook(
-                configResolver, givenFlowResolver(ExecutionPlan.empty()));
+                configResolver, givenFlowResolver(ExecutionPlan.empty()), 0.01);
         when(invocationContext.accountConfig())
                 .thenReturn(givenAccountConfig("key", null, null, true));
 
@@ -576,5 +578,24 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         ));
 
         return ExecutionPlan.of(null, Map.of(HookHttpEndpoint.POST_AUCTION, endpointExecutionPlan));
+    }
+
+    @Test
+    void callShouldCleanRequestWhenResolvingFlowFails() {
+        // given
+        final ConfigResolver failingConfigResolver = mock(ConfigResolver.class);
+        when(failingConfigResolver.resolve(any())).thenThrow(new IllegalStateException("failure"));
+        target = new OptableTargetingProcessedAuctionRequestHook(
+                failingConfigResolver, givenFlowResolver(ExecutionPlan.empty()), 0.01);
+
+        // when
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
+
+        // then
+        assertThat(result.action()).isEqualTo(InvocationAction.update);
+        assertThat(result.payloadUpdate()).isInstanceOf(BidRequestCleaner.class);
+        assertThat(((ModuleContext) result.moduleContext()).getEnrichRequestStatus().getStatus())
+                .isEqualTo(Status.FAIL);
     }
 }

@@ -115,7 +115,7 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
                 0.01);
         final ConfigResolver configResolver = new ConfigResolver(mapper, jsonMerger, properties);
         rawHook = new OptableRawAuctionRequestHook(configResolver, flowResolver, 0.01);
-        processedHook = new OptableTargetingProcessedAuctionRequestHook(configResolver, flowResolver);
+        processedHook = new OptableTargetingProcessedAuctionRequestHook(configResolver, flowResolver, 0.01);
         bidderHook = new OptableBidderRequestHook();
     }
 

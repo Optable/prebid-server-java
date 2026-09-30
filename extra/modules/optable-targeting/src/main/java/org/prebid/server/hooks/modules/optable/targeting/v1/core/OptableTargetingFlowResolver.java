@@ -133,16 +133,19 @@ public class OptableTargetingFlowResolver {
             return;
         }
 
-        moduleContext.setBiddersToEnrich(biddersToEnrich);
         final Account account = invocationContext.auctionContext().getAccount();
         final long crossHookFutureTimeout =
                 hooksExecutionPlan.getOptableTargetingBidderRequestTimeout(account);
 
-        moduleContext.setOptableTargetingCall(targetingRequestExecutor.makeRequest(
+        final Future<TargetingResult> optableTargetingCall = targetingRequestExecutor.makeRequest(
                 bidRequest,
                 invocationContext,
                 properties,
-                crossHookFutureTimeout));
+                crossHookFutureTimeout);
+
+        // set together, so that the bidder request hook never sees bidders without a call to await
+        moduleContext.setBiddersToEnrich(biddersToEnrich);
+        moduleContext.setOptableTargetingCall(optableTargetingCall);
     }
 
     private static JsonNode extUserOptable(BidRequest bidRequest) {
@@ -267,6 +270,12 @@ public class OptableTargetingFlowResolver {
                         .payloadUpdate(payloadUpdate)
                         .moduleContext(moduleContext)
                         .build());
+    }
+
+    public Future<InvocationResult<AuctionRequestPayload>> failed(ModuleContext moduleContext) {
+        moduleContext.failWithExecutionTime(
+                moduleContext.getCallTargetingAPITimestamp() > 0 ? calcAPICallExecutionTime(moduleContext) : 0);
+        return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
     }
 
     private static Future<InvocationResult<AuctionRequestPayload>> updateWithAnalytics(
