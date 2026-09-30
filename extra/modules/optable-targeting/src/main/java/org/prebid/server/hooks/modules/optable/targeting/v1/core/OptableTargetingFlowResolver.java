@@ -201,11 +201,17 @@ public class OptableTargetingFlowResolver {
             return update(BidRequestCleaner.instance(), moduleContext);
         }
 
-        final Future<TargetingResult> optableTargetingCall = targetingRequestExecutor.makeRequest(
-                auctionRequestPayload.bidRequest(),
-                invocationContext,
-                properties,
-                false);
+        final BidRequest bidRequest = auctionRequestPayload.bidRequest();
+        if (!PropertiesValidator.isTrafficSourceValid(bidRequest, properties)) {
+            moduleContext.setShouldSkipEnrichment(true);
+            return enrichWhenCompleted(null, moduleContext, properties);
+        }
+
+        // the whole request is enriched here, so it is enriched for all bidders when any of them is sampled
+        final Future<TargetingResult> optableTargetingCall =
+                CollectionUtils.isNotEmpty(bidderEnrichmentSampler.sample(bidRequest, properties))
+                        ? targetingRequestExecutor.makeRequest(bidRequest, invocationContext, properties, false)
+                        : null;
 
         return enrichWhenCompleted(optableTargetingCall, moduleContext, properties);
     }

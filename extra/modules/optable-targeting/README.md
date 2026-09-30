@@ -165,7 +165,8 @@ keep the `processed-auction-request` hook and add the `raw-auction-request` and 
 
 When the `bidder-request` hook is in the execution plan, the `processed-auction-request` hook no longer blocks: it only
 starts the API call for requests the raw stage deferred or did not see, and the `bidder-request` hook awaits it. Without
-the `bidder-request` hook, it keeps the legacy synchronous behavior.
+the `bidder-request` hook, it keeps the legacy synchronous behavior: it enriches the whole request, so the request is
+enriched for all bidders whenever `enrichment-percentage` and `bidder-enrichment-percentages` select any of them.
 
 ### Timeout considerations
 

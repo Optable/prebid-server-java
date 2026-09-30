@@ -26,6 +26,7 @@ import org.prebid.server.hooks.execution.model.StageExecutionPlan;
 import org.prebid.server.hooks.execution.v1.auction.AuctionRequestPayloadImpl;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.Status;
+import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidRequestCleaner;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
@@ -49,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -100,6 +102,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         when(invocationContext.timeout()).thenReturn(timeout);
         when(activityInfrastructure.isAllowed(any(), any())).thenReturn(true);
         when(timeout.remaining()).thenReturn(1000L);
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
     }
 
     private OptableTargetingFlowResolver givenFlowResolver(ExecutionPlan executionPlan) {
@@ -587,5 +590,45 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         assertThat(result.payloadUpdate()).isInstanceOf(BidRequestCleaner.class);
         assertThat(((ModuleContext) result.moduleContext()).getEnrichRequestStatus().getStatus())
                 .isEqualTo(Status.FAIL);
+    }
+
+    @Test
+    void callShouldNotCallApiInLegacyModeWhenTrafficSourceIsDisabled() {
+        // given
+        final OptableTargetingProperties properties = givenOptableTargetingProperties(false);
+        properties.setEnrichWeb(false);
+        target = new OptableTargetingProcessedAuctionRequestHook(
+                new ConfigResolver(mapper, jsonMerger, properties), givenFlowResolver(ExecutionPlan.empty()), 0.01);
+        when(invocationContext.accountConfig()).thenReturn(null);
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+
+        // when
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
+
+        // then
+        assertThat(result.action()).isEqualTo(InvocationAction.update);
+        assertThat(((ModuleContext) result.moduleContext()).isShouldSkipEnrichment()).isTrue();
+        verifyNoInteractions(optableTargeting);
+    }
+
+    @Test
+    void callShouldNotCallApiInLegacyModeWhenNoBidderIsSampled() {
+        // given
+        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of());
+
+        // when
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
+
+        // then
+        assertThat(result.action()).isEqualTo(InvocationAction.update);
+        final BidRequest bidRequest = result
+                .payloadUpdate()
+                .apply(AuctionRequestPayloadImpl.of(givenBidRequest()))
+                .bidRequest();
+        assertThat(bidRequest.getUser().getEids()).isNull();
+        verifyNoInteractions(optableTargeting);
     }
 }
