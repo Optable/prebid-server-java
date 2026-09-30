@@ -111,7 +111,7 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
         final OptableTargetingFlowResolver flowResolver = new OptableTargetingFlowResolver(
                 BidderEnrichmentSampler.of(AliasesResolver.of(bidderCatalog), randomSupplier),
                 new TargetingRequestExecutor(optableTargeting, userFpdActivityMask, timeoutFactory, 0.01),
-                CompositeHookExecutionPlan.of(ExecutionPlan.empty()),
+                CompositeHookExecutionPlan.of(givenBidderRequestHookPlan(), ExecutionPlan.empty()),
                 0.01);
         final ConfigResolver configResolver = new ConfigResolver(mapper, jsonMerger, properties);
         rawHook = new OptableRawAuctionRequestHook(configResolver, flowResolver, 0.01);

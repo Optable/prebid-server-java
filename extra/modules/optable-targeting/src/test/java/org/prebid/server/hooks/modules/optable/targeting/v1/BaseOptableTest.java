@@ -27,6 +27,13 @@ import org.prebid.server.auction.gpp.model.GppContext;
 import org.prebid.server.auction.model.AuctionContext;
 import org.prebid.server.auction.model.TimeoutContext;
 import org.prebid.server.execution.timeout.Timeout;
+import org.prebid.server.hooks.execution.model.EndpointExecutionPlan;
+import org.prebid.server.hooks.execution.model.ExecutionGroup;
+import org.prebid.server.hooks.execution.model.ExecutionPlan;
+import org.prebid.server.hooks.execution.model.HookHttpEndpoint;
+import org.prebid.server.hooks.execution.model.HookId;
+import org.prebid.server.hooks.execution.model.Stage;
+import org.prebid.server.hooks.execution.model.StageExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.model.EnrichmentStatus;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.Query;
@@ -121,6 +128,15 @@ public abstract class BaseOptableTest {
 
     protected AuctionContext givenAuctionContext(ActivityInfrastructure activityInfrastructure, Timeout timeout) {
         return givenAuctionContext(activityInfrastructure, timeout, null);
+    }
+
+    protected static ExecutionPlan givenBidderRequestHookPlan() {
+        final StageExecutionPlan bidderRequestStage = StageExecutionPlan.of(List.of(ExecutionGroup.of(
+                null, List.of(HookId.of("optable-targeting", "optable-targeting-bidder-request-hook")))));
+
+        return ExecutionPlan.of(null, Map.of(
+                HookHttpEndpoint.POST_AUCTION,
+                EndpointExecutionPlan.of(Map.of(Stage.bidder_request, bidderRequestStage))));
     }
 
     protected HttpRequestContext givenHttpRequestContext() {

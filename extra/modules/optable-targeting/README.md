@@ -25,6 +25,10 @@ Stored requests and stored imps are merged only after the Raw Auction Request st
 `site`/`app` can't be determined at the raw stage, the API call is started by the Processed Auction Request hook on the
 merged request instead. Without the `processed-auction-request` hook such requests are not enriched.
 
+The Raw Auction Request stage does not run for the `/openrtb2/amp` and `/openrtb2/video` endpoints. To enrich those, add
+the `processed-auction-request` and `bidder-request` hooks to their execution plans as well: the API call is then
+started by the Processed Auction Request hook.
+
 We recommend defining the execution plan in the account config so the module is only invoked for specific accounts. See
 below for an example.
 
@@ -159,21 +163,26 @@ Previous versions of the module used only the `processed-auction-request` hook (
 hook), which made the API call and enriched the whole request synchronously, blocking the auction pipeline. To migrate,
 keep the `processed-auction-request` hook and add the `raw-auction-request` and `bidder-request` hooks as shown above.
 
-With the new hooks present, the `processed-auction-request` hook no longer blocks: it only starts the API call for
-requests that were deferred at the raw stage, and the `bidder-request` hook awaits it. Without the new hooks, it keeps
-the legacy synchronous behavior.
+When the `bidder-request` hook is in the execution plan, the `processed-auction-request` hook no longer blocks: it only
+starts the API call for requests the raw stage deferred or did not see, and the `bidder-request` hook awaits it. Without
+the `bidder-request` hook, it keeps the legacy synchronous behavior.
 
 ### Timeout considerations
 
-The `bidder-request` hook timeout is used as the timeout budget for the Optable Targeting API call Future that is
-initiated in the `raw-auction-request` or `processed-auction-request` stage. The API call runs in parallel with other
-auction processing, so the effective wait time at the `bidder-request` stage is typically much shorter than the full
-API roundtrip. The `raw-auction-request` and `processed-auction-request` hook timeouts only need to cover their own
-lightweight setup (validation, sampling) and can be kept short.
+The Optable Targeting API call is initiated in the `raw-auction-request` or `processed-auction-request` stage and runs
+in parallel with other auction processing, so the effective wait time at the `bidder-request` stage is typically much
+shorter than the full API roundtrip. There are two limits on it:
 
-**Note:** Do not confuse hook timeout value with the module timeout parameter which is optional. The hook timeout value
-would depend on the cloud/region where the PBS instance is hosted and the latency to reach the Optable's servers. This
-will need to be verified experimentally upon deployment.
+* the `api-timeout` module parameter limits the call itself. When it is not set, the call is limited by the time
+  remaining for the auction (`tmax`).
+* the `bidder-request` hook timeout limits how long a bidder request waits for the result of the call.
+
+The `raw-auction-request` and `processed-auction-request` hook timeouts only need to cover their own lightweight setup
+(validation, sampling) and can be kept short.
+
+**Note:** Do not confuse these with the module `timeout` parameter, which is an optional hint passed to the Targeting
+API. The `api-timeout` and the hook timeout values would depend on the cloud/region where the PBS instance is hosted
+and the latency to reach the Optable's servers. This will need to be verified experimentally upon deployment.
 
 The timeout value for the `auction-response` can be set to 10 ms - usually it will be sub-millisecond time as there are
 no HTTP calls made in this hook - Optable-specific keywords are cached on earlier stages and retrieved from the module
@@ -201,6 +210,7 @@ would result in this nesting in the JSON configuration:
 | ppid-mapping                   | no       | map     | none          | This specifies PPID source (`user.ext.eids[].source`) to a custom identifier prefix mapping, f.e. `{"example.com" : "c"}`. See the section on ID Mapping below for more detail.                                                                                                                                                                                                                                            |
 | adserver-targeting             | no       | boolean | false         | If set to true - will add the Optable-specific adserver targeting keywords into the PBS response for every `seatbid[].bid[].ext.prebid.targeting`                                                                                                                                                                                                                                                                          |
 | timeout                        | no       | integer | none          | A soft timeout (in ms) sent as a hint to the Targeting API endpoint to limit the request times to Optable's external tokenizer services                                                                                                                                                                                                                                                                                    |
+| api-timeout                    | no       | integer | none          | A hard timeout (in ms) for the Targeting API call that is awaited by the `bidder-request` hook. When not set, the call is limited by the time remaining for the auction. See Timeout considerations above. |
 | id-prefix-order                | no       | string  | none          | An optional string of comma separated id prefixes that prioritizes and specifies the order in which ids are provided to Targeting API in a query string. F.e. "c,c1,id5" will guarantee that Targeting API will see id=c:...,c1:...,id5:... if these ids are provided. id-prefixes not mentioned in this list will be added in arbitrary order after the priority prefix ids. This affects Targeting API processing logic  |
 | hid-prefixes                   | no       | string  | none          | An optional string of comma separated id prefixes that should additionally be sent to the Targeting API as resolver hints in `hid=prefix:value` query parameters. See the section on Resolver Hints (hid) below for more detail.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | enrichment-percentage          | no       | integer | 100           | Default percentage (0-100) of bid requests per bidder that will receive enrichment data. Set to 100 to enrich all requests, 0 to disable enrichment by default.                                                                                                                                                                                                                                                            |

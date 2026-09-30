@@ -23,7 +23,6 @@ import org.prebid.server.log.LoggerFactory;
 import org.prebid.server.proto.openrtb.ext.request.ExtRequest;
 import org.prebid.server.proto.openrtb.ext.request.ExtRequestPrebid;
 import org.prebid.server.proto.openrtb.ext.request.ExtUser;
-import org.prebid.server.settings.model.Account;
 
 import java.util.Collection;
 import java.util.Objects;
@@ -72,29 +71,24 @@ public class OptableTargetingFlowResolver {
             // the cleaner strips user.ext.optable at this stage, while the deferred call still needs its ids
             moduleContext.setExtUserOptable(extUserOptable(bidRequest));
         } else {
-            startTargetingCall(moduleContext, bidRequest, invocationContext, properties);
+            startTargetingCall(moduleContext, bidRequest, invocationContext, properties, true);
         }
 
         return update(BidRequestCleaner.instance(), moduleContext);
     }
 
-    /**
-     * Processed auction request stage: starts the call deferred by the raw auction request hook.
-     */
-    public Future<InvocationResult<AuctionRequestPayload>> resolveDeferredOptableTargetingFlow(
-            ModuleContext moduleContext,
-            AuctionRequestPayload payload,
-            AuctionInvocationContext invocationContext,
-            OptableTargetingProperties properties) {
+    private void startDeferredTargetingCall(ModuleContext moduleContext,
+                                            AuctionRequestPayload payload,
+                                            AuctionInvocationContext invocationContext,
+                                            OptableTargetingProperties properties,
+                                            boolean awaitedByBidderRequestHook) {
 
         final BidRequest bidRequest = withExtUserOptable(payload.bidRequest(), moduleContext.getExtUserOptable());
         moduleContext.setEarlyCallInitializationCompleted(true);
         moduleContext.setExtUserOptable(null);
         moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
 
-        startTargetingCall(moduleContext, bidRequest, invocationContext, properties);
-
-        return update(BidRequestCleaner.instance(), moduleContext);
+        startTargetingCall(moduleContext, bidRequest, invocationContext, properties, awaitedByBidderRequestHook);
     }
 
     private boolean shouldDeferTargetingCall(BidRequest bidRequest) {
@@ -121,7 +115,8 @@ public class OptableTargetingFlowResolver {
     private void startTargetingCall(ModuleContext moduleContext,
                                     BidRequest bidRequest,
                                     AuctionInvocationContext invocationContext,
-                                    OptableTargetingProperties properties) {
+                                    OptableTargetingProperties properties,
+                                    boolean awaitedByLaterHook) {
 
         if (!PropertiesValidator.isTrafficSourceValid(bidRequest, properties)) {
             moduleContext.setShouldSkipEnrichment(true);
@@ -133,15 +128,11 @@ public class OptableTargetingFlowResolver {
             return;
         }
 
-        final Account account = invocationContext.auctionContext().getAccount();
-        final long crossHookFutureTimeout =
-                hooksExecutionPlan.getOptableTargetingBidderRequestTimeout(account);
-
         final Future<TargetingResult> optableTargetingCall = targetingRequestExecutor.makeRequest(
                 bidRequest,
                 invocationContext,
                 properties,
-                crossHookFutureTimeout);
+                awaitedByLaterHook);
 
         // set together, so that the bidder request hook never sees bidders without a call to await
         moduleContext.setBiddersToEnrich(biddersToEnrich);
@@ -172,34 +163,60 @@ public class OptableTargetingFlowResolver {
     }
 
     /**
-     * @deprecated This call is deprecated and will be removed in a future release.
+     * Processed auction request stage.
      */
-    @Deprecated
     public Future<InvocationResult<AuctionRequestPayload>> resolveOptableTargetingFlow(
             AuctionRequestPayload auctionRequestPayload,
             AuctionInvocationContext invocationContext,
             ModuleContext moduleContext,
             OptableTargetingProperties properties) {
 
-        if (moduleContext.isShouldSkipEnrichment()) {
+        final boolean hasBidderRequestHook =
+                hooksExecutionPlan.hasBidderRequestHook(invocationContext.auctionContext());
+
+        if (moduleContext.isEarlyNetworkCallEnabled()) {
+            final boolean deferred = !moduleContext.isEarlyCallInitializationCompleted();
+            if (deferred) {
+                startDeferredTargetingCall(
+                        moduleContext, auctionRequestPayload, invocationContext, properties, hasBidderRequestHook);
+            }
+
+            if (hasBidderRequestHook) {
+                return deferred ? update(BidRequestCleaner.instance(), moduleContext) : noAction(moduleContext);
+            }
+
+            return enrichWhenCompleted(moduleContext.getOptableTargetingCall(), moduleContext, properties);
+        }
+
+        moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
+        moduleContext.setOptableTargetingProperties(properties);
+        if (!PropertiesValidator.isValid(properties)) {
+            conditionalLogger.error(AUCTION_NOT_PROPERLY_CONFIGURED, logSamplingRate);
+            return failed(moduleContext);
+        }
+
+        // the raw auction request stage does not run for f.e. amp and video requests
+        if (hasBidderRequestHook) {
+            startTargetingCall(moduleContext, auctionRequestPayload.bidRequest(), invocationContext, properties, true);
+            return update(BidRequestCleaner.instance(), moduleContext);
+        }
+
+        final Future<TargetingResult> optableTargetingCall = targetingRequestExecutor.makeRequest(
+                auctionRequestPayload.bidRequest(),
+                invocationContext,
+                properties,
+                false);
+
+        return enrichWhenCompleted(optableTargetingCall, moduleContext, properties);
+    }
+
+    private Future<InvocationResult<AuctionRequestPayload>> enrichWhenCompleted(
+            Future<TargetingResult> optableTargetingCall,
+            ModuleContext moduleContext,
+            OptableTargetingProperties properties) {
+
+        if (moduleContext.isShouldSkipEnrichment() || optableTargetingCall == null) {
             moduleContext.setOptableTargetingExecutionTime(calcAPICallExecutionTime(moduleContext));
-            return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
-        }
-
-        final Account account = invocationContext.auctionContext().getAccount();
-        final boolean hasRawAuctionRequestHook = hooksExecutionPlan.hasRawAuctionRequestHook(account);
-        final boolean hasBidderRequestHook = hooksExecutionPlan.hasBidderRequestHook(account);
-
-        if (hasRawAuctionRequestHook && hasBidderRequestHook) {
-            return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
-        }
-
-        final Future<TargetingResult> optableTargetingCall = hasRawAuctionRequestHook
-                ? resolveEarlyNetworkCall(moduleContext)
-                : resolvePreEarlyNetworkCall(auctionRequestPayload, invocationContext, moduleContext, properties);
-
-        if (optableTargetingCall == null) {
-            moduleContext.failWithExecutionTime(calcAPICallExecutionTime(moduleContext));
             return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
         }
 
@@ -229,34 +246,8 @@ public class OptableTargetingFlowResolver {
         return updateWithAnalytics(payloadUpdate, moduleContext);
     }
 
-    private Future<TargetingResult> resolveEarlyNetworkCall(ModuleContext moduleContext) {
-        return moduleContext.getOptableTargetingCall();
-    }
-
     private static long calcAPICallExecutionTime(ModuleContext moduleContext) {
         return System.currentTimeMillis() - moduleContext.getCallTargetingAPITimestamp();
-    }
-
-    private Future<TargetingResult> resolvePreEarlyNetworkCall(
-            AuctionRequestPayload payload,
-            AuctionInvocationContext invocationContext,
-            ModuleContext moduleContext,
-            OptableTargetingProperties properties) {
-
-        moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
-        if (!PropertiesValidator.isValid(properties)) {
-            conditionalLogger.error(AUCTION_NOT_PROPERLY_CONFIGURED, logSamplingRate);
-
-            moduleContext.failWithExecutionTime(
-                    System.currentTimeMillis() - moduleContext.getCallTargetingAPITimestamp());
-            return Future.failedFuture(AUCTION_NOT_PROPERLY_CONFIGURED);
-        }
-
-        return targetingRequestExecutor.makeRequest(
-                payload.bidRequest(),
-                invocationContext,
-                properties,
-                null);
     }
 
     private static Future<InvocationResult<AuctionRequestPayload>> update(
@@ -268,6 +259,15 @@ public class OptableTargetingFlowResolver {
                         .status(InvocationStatus.success)
                         .action(InvocationAction.update)
                         .payloadUpdate(payloadUpdate)
+                        .moduleContext(moduleContext)
+                        .build());
+    }
+
+    private static Future<InvocationResult<AuctionRequestPayload>> noAction(ModuleContext moduleContext) {
+        return Future.succeededFuture(
+                InvocationResultImpl.<AuctionRequestPayload>builder()
+                        .status(InvocationStatus.success)
+                        .action(InvocationAction.no_action)
                         .moduleContext(moduleContext)
                         .build());
     }

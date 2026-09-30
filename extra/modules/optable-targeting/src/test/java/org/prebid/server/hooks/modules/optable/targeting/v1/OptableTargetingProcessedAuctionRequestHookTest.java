@@ -106,7 +106,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         return new OptableTargetingFlowResolver(
                 bidderEnrichmentSampler,
                 targetingRequestExecutor,
-                CompositeHookExecutionPlan.of(executionPlan),
+                CompositeHookExecutionPlan.of(executionPlan, ExecutionPlan.empty()),
                 0.01);
     }
 
@@ -219,11 +219,12 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
     }
 
     @Test
-    void callShouldReturnResultWithNoActionWhenEarlyOptableCallIsEnabledAndInitialized() {
+    void callShouldEnrichRequestWithEarlyCallResultWhenBidderRequestHookIsAbsent() {
         // given
         final ModuleContext moduleContext = new ModuleContext();
         moduleContext.setEarlyNetworkCallEnabled(true);
         moduleContext.setEarlyCallInitializationCompleted(true);
+        moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
                 givenFlowResolver(givenExecutionPlan(true, false)), 0.01);
@@ -235,24 +236,22 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
                         givenBidRequest(),
                         invocationContext,
                         givenOptableTargetingProperties("key", "tenant", "origin", false),
-                        null));
+                        false));
 
         // when
-        final Future<InvocationResult<AuctionRequestPayload>> future = target.call(auctionRequestPayload,
-                invocationContext);
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
 
         // then
-        assertThat(future).isNotNull();
-        assertThat(future.succeeded()).isTrue();
-
-        final InvocationResult<AuctionRequestPayload> result = future.result();
-        assertThat(result).isNotNull()
-                .returns(InvocationStatus.success, InvocationResult::status)
-                .returns(InvocationAction.no_action, InvocationResult::action)
-                .extracting(InvocationResult::errors).isNull();
-        assertThat(result.payloadUpdate()).isNull();
-        assertThat(moduleContext.getOptableTargetingCall()).isNotNull();
-        assertThat(moduleContext.getOptableTargetingCall().succeeded()).isTrue();
+        assertThat(result.action()).isEqualTo(InvocationAction.update);
+        final BidRequest bidRequest = result
+                .payloadUpdate()
+                .apply(AuctionRequestPayloadImpl.of(givenBidRequest()))
+                .bidRequest();
+        assertThat(bidRequest.getUser().getEids())
+                .flatExtracting(Eid::getUids)
+                .extracting(Uid::getId)
+                .containsExactly("id");
     }
 
     @Test
@@ -261,6 +260,9 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         final ModuleContext moduleContext = new ModuleContext();
         moduleContext.setEarlyNetworkCallEnabled(true);
         moduleContext.setEarlyCallInitializationCompleted(false);
+        target = new OptableTargetingProcessedAuctionRequestHook(
+                configResolver,
+                givenFlowResolver(givenExecutionPlan(true, true)), 0.01);
 
         final TargetingResult targetingResult = givenTargetingResult();
         when(invocationContext.moduleContext()).thenReturn(moduleContext);
@@ -302,6 +304,9 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         final ModuleContext moduleContext = new ModuleContext();
         moduleContext.setEarlyNetworkCallEnabled(true);
         moduleContext.setEarlyCallInitializationCompleted(false);
+        target = new OptableTargetingProcessedAuctionRequestHook(
+                configResolver,
+                givenFlowResolver(givenExecutionPlan(true, true)), 0.01);
 
         when(invocationContext.moduleContext()).thenReturn(moduleContext);
         when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
@@ -362,7 +367,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
     }
 
     @Test
-    void callShouldReturnResultWithEnrichedBidRequestWhenOnlyBidderRequestHookIsPresent() {
+    void callShouldStartCallForBidderRequestHookWhenRawAuctionRequestHookDidNotRun() {
         // given
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
@@ -370,61 +375,45 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
         when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
         when(optableTargeting.getTargeting(any(), any(), any(), any()))
                 .thenReturn(Future.succeededFuture(givenTargetingResult()));
+        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
 
         // when
-        final Future<InvocationResult<AuctionRequestPayload>> future = target.call(auctionRequestPayload,
-                invocationContext);
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
 
         // then
-        assertThat(future).isNotNull();
-        assertThat(future.succeeded()).isTrue();
+        assertThat(result.action()).isEqualTo(InvocationAction.update);
+        final ModuleContext moduleContext = (ModuleContext) result.moduleContext();
+        assertThat(moduleContext.getBiddersToEnrich()).containsExactly("bidder");
+        assertThat(moduleContext.getOptableTargetingCall().succeeded()).isTrue();
+        assertThat(moduleContext.getOptableTargetingProperties()).isNotNull();
 
-        final InvocationResult<AuctionRequestPayload> result = future.result();
-        assertThat(result).isNotNull()
-                .returns(InvocationStatus.success, InvocationResult::status)
-                .returns(InvocationAction.update, InvocationResult::action)
-                .extracting(InvocationResult::errors).isNull();
-        final BidRequest bidRequest = result
-                .payloadUpdate()
-                .apply(AuctionRequestPayloadImpl.of(givenBidRequest()))
-                .bidRequest();
-        assertThat(bidRequest.getUser().getEids())
-                .flatExtracting(Eid::getUids)
-                .extracting(Uid::getId)
-                .containsExactly("id");
-        assertThat(bidRequest.getUser().getData())
-                .flatExtracting(Data::getSegment)
-                .extracting(Segment::getId)
-                .containsExactly("id");
-    }
-
-    @Test
-    void callShouldReturnResultWithoutEnrichedBidRequestWhenBothHooksArePresent() {
-        // given
-        target = new OptableTargetingProcessedAuctionRequestHook(
-                configResolver,
-                givenFlowResolver(givenExecutionPlan(true, true)), 0.01);
-        when(invocationContext.moduleContext()).thenReturn(new ModuleContext());
-
-        // when
-        final Future<InvocationResult<AuctionRequestPayload>> future = target.call(auctionRequestPayload,
-                invocationContext);
-
-        // then
-        assertThat(future).isNotNull();
-        assertThat(future.succeeded()).isTrue();
-
-        final InvocationResult<AuctionRequestPayload> result = future.result();
-        assertThat(result).isNotNull()
-                .returns(InvocationStatus.success, InvocationResult::status)
-                .returns(InvocationAction.update, InvocationResult::action)
-                .extracting(InvocationResult::errors).isNull();
         final BidRequest bidRequest = result
                 .payloadUpdate()
                 .apply(AuctionRequestPayloadImpl.of(givenBidRequest()))
                 .bidRequest();
         assertThat(bidRequest.getUser().getEids()).isNull();
-        assertThat(bidRequest.getUser().getData()).isNull();
+        assertThat(bidRequest.getUser().getExt().getProperty("optable")).isNull();
+    }
+
+    @Test
+    void callShouldReturnNoActionWhenRawAuctionRequestHookStartedCallForBidderRequestHook() {
+        // given
+        target = new OptableTargetingProcessedAuctionRequestHook(
+                configResolver,
+                givenFlowResolver(givenExecutionPlan(true, true)), 0.01);
+        final ModuleContext moduleContext = new ModuleContext();
+        moduleContext.setEarlyNetworkCallEnabled(true);
+        when(invocationContext.moduleContext()).thenReturn(moduleContext);
+
+        // when
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
+
+        // then
+        assertThat(result.status()).isEqualTo(InvocationStatus.success);
+        assertThat(result.action()).isEqualTo(InvocationAction.no_action);
+        assertThat(result.payloadUpdate()).isNull();
     }
 
     @Test
@@ -539,6 +528,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
     void callShouldReturnUpdateWhenTrafficSourceIsInvalid() {
         // given
         final ModuleContext moduleContext = new ModuleContext();
+        moduleContext.setEarlyNetworkCallEnabled(true);
         moduleContext.setShouldSkipEnrichment(true);
         when(invocationContext.moduleContext()).thenReturn(moduleContext);
 
