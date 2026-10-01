@@ -119,7 +119,8 @@ public class OptableTargetingConfig {
                         logSamplingRate),
                 new OptableTargetingProcessedAuctionRequestHook(
                         configResolver,
-                        earlyOptableCallResolver),
+                        earlyOptableCallResolver,
+                        logSamplingRate),
                 new OptableBidderRequestHook(),
                 new OptableTargetingAuctionResponseHook(
                         configResolver,
@@ -136,17 +137,22 @@ public class OptableTargetingConfig {
     OptableTargetingFlowResolver earlyOptableCallResolver(
             BidderEnrichmentSampler bidderEnrichmentSampler,
             TargetingRequestExecutor targetingRequestExecutor,
-            @Value("${hooks.host-execution-plan:}")
-            String executionPlan,
+            @Value("${hooks.host-execution-plan:}") String hostExecutionPlan,
+            @Value("${hooks.default-account-execution-plan:}") String defaultAccountExecutionPlan,
             JacksonMapper mapper,
             @Value("${logging.sampling-rate:0.01}") double logSamplingRate) {
 
         final CompositeHookExecutionPlan hooksExecutionPlan = CompositeHookExecutionPlan.of(
-                StringUtils.isNoneEmpty(executionPlan)
-                        ? mapper.decodeValue(executionPlan, ExecutionPlan.class)
-                        : null);
+                parseExecutionPlan(hostExecutionPlan, mapper),
+                parseExecutionPlan(defaultAccountExecutionPlan, mapper));
 
         return new OptableTargetingFlowResolver(
                 bidderEnrichmentSampler, targetingRequestExecutor, hooksExecutionPlan, logSamplingRate);
+    }
+
+    private static ExecutionPlan parseExecutionPlan(String executionPlan, JacksonMapper mapper) {
+        return StringUtils.isNotBlank(executionPlan)
+                ? mapper.decodeValue(executionPlan, ExecutionPlan.class)
+                : ExecutionPlan.empty();
     }
 }

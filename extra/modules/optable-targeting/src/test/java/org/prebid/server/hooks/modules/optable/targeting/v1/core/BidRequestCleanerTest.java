@@ -3,9 +3,9 @@ package org.prebid.server.hooks.modules.optable.targeting.v1.core;
 import com.iab.openrtb.request.BidRequest;
 import com.iab.openrtb.request.User;
 import org.junit.jupiter.api.Test;
-import org.prebid.server.hooks.execution.v1.auction.AuctionRequestPayloadImpl;
+import org.prebid.server.hooks.execution.v1.bidder.BidderRequestPayloadImpl;
 import org.prebid.server.hooks.modules.optable.targeting.v1.BaseOptableTest;
-import org.prebid.server.hooks.v1.auction.AuctionRequestPayload;
+import org.prebid.server.hooks.v1.bidder.BidderRequestPayload;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,14 +14,14 @@ public class BidRequestCleanerTest extends BaseOptableTest {
     @Test
     public void shouldRemoveUserExtOptableTag() {
         // given
-        final AuctionRequestPayload auctionRequestPayload = AuctionRequestPayloadImpl.of(givenBidRequest(bidRequest ->
+        final BidderRequestPayload bidderRequestPayload = BidderRequestPayloadImpl.of(givenBidRequest(bidRequest ->
                 bidRequest.user(givenUser())));
 
         // when
-        final AuctionRequestPayload result = BidRequestCleaner.instance().apply(auctionRequestPayload);
+        final BidderRequestPayload result = BidRequestCleaner.instance().apply(bidderRequestPayload);
 
         // then
-        assertThat(result).extracting(AuctionRequestPayload::bidRequest)
+        assertThat(result).extracting(BidderRequestPayload::bidRequest)
                 .extracting(BidRequest::getUser)
                 .extracting(User::getExt)
                 .extracting(it -> it.getProperty("optable"))
@@ -36,14 +36,14 @@ public class BidRequestCleanerTest extends BaseOptableTest {
                 .put("other", "value")
                 .put("id5_signature", "signature");
 
-        final AuctionRequestPayload auctionRequestPayload = AuctionRequestPayloadImpl.of(givenBidRequest(bidRequest ->
+        final BidderRequestPayload bidderRequestPayload = BidderRequestPayloadImpl.of(givenBidRequest(bidRequest ->
                 bidRequest.user(user)));
 
         // when
-        final AuctionRequestPayload result = BidRequestCleaner.instance().apply(auctionRequestPayload);
+        final BidderRequestPayload result = BidRequestCleaner.instance().apply(bidderRequestPayload);
 
         // then
-        assertThat(result).extracting(AuctionRequestPayload::bidRequest)
+        assertThat(result).extracting(BidderRequestPayload::bidRequest)
                 .extracting(BidRequest::getUser)
                 .extracting(User::getExt)
                 .extracting(it -> (com.fasterxml.jackson.databind.node.ObjectNode) it.getProperty("optable"))

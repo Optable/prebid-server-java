@@ -156,19 +156,21 @@ Sample module enablement configuration in JSON and YAML formats:
 
 Previous versions used only the `processed-auction-request` hook (with `auction-response`), which made the API call
 and enriched the whole request synchronously, blocking the auction. To migrate, keep that hook and add the
-`raw-auction-request` and `bidder-request` hooks as shown above. With them in the plan, the processed hook no longer
-blocks; without them, it keeps the legacy synchronous behavior.
+`raw-auction-request` and `bidder-request` hooks as shown above. With the `bidder-request` hook in the plan, the
+processed hook no longer blocks; without it, it keeps the legacy synchronous behavior. In that mode the whole request is
+enriched, so it is enriched for all bidders whenever sampling selects any of them.
 
 ### Timeout considerations
 
-The `bidder-request` hook timeout is the budget for the API call started in the `raw-auction-request` or
-`processed-auction-request` stage. The call runs in parallel with the rest of the auction, so the actual wait at the
-`bidder-request` stage is usually much shorter than the full roundtrip. The `raw-auction-request` and
+The API call is started in the `raw-auction-request` or `processed-auction-request` stage and runs in parallel with the
+rest of the auction, so the actual wait at the `bidder-request` stage is usually much shorter than the full roundtrip.
+The `api-timeout` module parameter limits the call itself (by default, the time remaining for the auction), and the
+`bidder-request` hook timeout limits how long a bidder request waits for it. The `raw-auction-request` and
 `processed-auction-request` hook timeouts only cover validation and sampling and can be kept short.
 
-**Note:** Do not confuse hook timeout value with the module timeout parameter which is optional. The hook timeout value
-would depend on the cloud/region where the PBS instance is hosted and the latency to reach the Optable's servers. This
-will need to be verified experimentally upon deployment.
+**Note:** Do not confuse these with the module `timeout` parameter, an optional hint passed to the Targeting API. The
+`api-timeout` and hook timeout values depend on the cloud/region where the PBS instance is hosted and the latency to
+reach the Optable's servers, and need to be verified experimentally upon deployment.
 
 The timeout value for the `auction-response` can be set to 10 ms - usually it will be sub-millisecond time as there are
 no HTTP calls made in this hook - Optable-specific keywords are cached on earlier stages and retrieved from the module
@@ -196,6 +198,7 @@ would result in this nesting in the JSON configuration:
 | ppid-mapping                   | no       | map     | none          | This specifies PPID source (`user.ext.eids[].source`) to a custom identifier prefix mapping, f.e. `{"example.com" : "c"}`. See the section on ID Mapping below for more detail.                                                                                                                                                                                                                                            |
 | adserver-targeting             | no       | boolean | false         | If set to true - will add the Optable-specific adserver targeting keywords into the PBS response for every `seatbid[].bid[].ext.prebid.targeting`                                                                                                                                                                                                                                                                          |
 | timeout                        | no       | integer | none          | A soft timeout (in ms) sent as a hint to the Targeting API endpoint to limit the request times to Optable's external tokenizer services                                                                                                                                                                                                                                                                                    |
+| api-timeout                    | no       | integer | none          | A hard timeout (in ms) for the Targeting API call awaited by the `bidder-request` hook. When not set, the call is limited by the time remaining for the auction. See Timeout considerations above. |
 | id-prefix-order                | no       | string  | none          | An optional string of comma separated id prefixes that prioritizes and specifies the order in which ids are provided to Targeting API in a query string. F.e. "c,c1,id5" will guarantee that Targeting API will see id=c:...,c1:...,id5:... if these ids are provided. id-prefixes not mentioned in this list will be added in arbitrary order after the priority prefix ids. This affects Targeting API processing logic  |
 | hid-prefixes                   | no       | string  | none          | An optional string of comma separated id prefixes that should additionally be sent to the Targeting API as resolver hints in `hid=prefix:value` query parameters. See the section on Resolver Hints (hid) below for more detail.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | enrichment-percentage          | no       | integer | 100           | Default percentage (0-100) of bid requests per bidder that will receive enrichment data. Set to 100 to enrich all requests, 0 to disable enrichment by default.                                                                                                                                                                                                                                                            |

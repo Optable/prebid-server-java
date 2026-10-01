@@ -17,13 +17,17 @@ import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.execution.model.ExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
+import org.prebid.server.hooks.modules.optable.targeting.model.Status;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.AuctionRequestCleaner;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargetingFlowResolver;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.TargetingRequestExecutor;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.OptableTargeting;
+import org.prebid.server.hooks.v1.InvocationAction;
 import org.prebid.server.hooks.v1.InvocationResult;
+import org.prebid.server.hooks.v1.InvocationStatus;
 import org.prebid.server.hooks.v1.auction.AuctionInvocationContext;
 import org.prebid.server.hooks.v1.auction.AuctionRequestPayload;
 
@@ -32,6 +36,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -72,13 +77,14 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
         when(invocationContext.timeout()).thenReturn(timeout);
         when(activityInfrastructure.isAllowed(any(), any())).thenReturn(true);
         when(timeout.remaining()).thenReturn(1000L);
+        when(bidderEnrichmentSampler.hasBidders(any())).thenReturn(true);
     }
 
     private OptableTargetingFlowResolver givenEarlyOptableCallResolver() {
         return new OptableTargetingFlowResolver(
                 bidderEnrichmentSampler,
                 targetingRequestExecutor,
-                CompositeHookExecutionPlan.of(ExecutionPlan.empty()),
+                CompositeHookExecutionPlan.of(ExecutionPlan.empty(), ExecutionPlan.empty()),
                 0.01);
     }
 
@@ -212,9 +218,28 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                         final ModuleContext moduleContext = cxt.result();
                         assertThat(moduleContext.isShouldSkipEnrichment()).isFalse();
                         assertThat(moduleContext.getOptableTargetingCall()).isNull();
-                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isFalse();
+                        assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
                     });
                     vertxTestContext.completeNow();
                 });
+    }
+
+    @Test
+    public void shouldCleanRequestWhenInitiatingCallFails() {
+        // given
+        final ConfigResolver failingConfigResolver = mock(ConfigResolver.class);
+        when(failingConfigResolver.resolve(any())).thenThrow(new IllegalStateException("failure"));
+        target = new OptableRawAuctionRequestHook(failingConfigResolver, givenEarlyOptableCallResolver(), 0.01);
+
+        // when
+        final InvocationResult<AuctionRequestPayload> result =
+                target.call(auctionRequestPayload, invocationContext).result();
+
+        // then
+        assertThat(result.status()).isEqualTo(InvocationStatus.success);
+        assertThat(result.action()).isEqualTo(InvocationAction.update);
+        assertThat(result.payloadUpdate()).isInstanceOf(AuctionRequestCleaner.class);
+        assertThat(((ModuleContext) result.moduleContext()).getEnrichRequestStatus().getStatus())
+                .isEqualTo(Status.FAIL);
     }
 }
