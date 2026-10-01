@@ -25,6 +25,7 @@ import org.prebid.server.hooks.execution.v1.bidder.BidderRequestPayloadImpl;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.AliasesResolver;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidRequestCleaner;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
@@ -206,7 +207,7 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
                 callBidderHook("bidderA", mergedRequest, moduleContext);
 
         // then
-        assertThat(result.action()).isEqualTo(InvocationAction.no_action);
+        assertThat(result.payloadUpdate()).isInstanceOf(BidRequestCleaner.class);
         assertThat(moduleContext.isShouldSkipEnrichment()).isTrue();
         verifyNoInteractions(optableTargeting);
     }
@@ -226,7 +227,7 @@ public class OptableStoredRequestFlowTest extends BaseOptableTest {
 
         // then
         assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
-        assertThat(result.action()).isEqualTo(InvocationAction.no_action);
+        assertThat(result.payloadUpdate()).isInstanceOf(BidRequestCleaner.class);
         verify(randomSupplier, times(1)).getAsInt();
         verifyNoInteractions(optableTargeting);
     }

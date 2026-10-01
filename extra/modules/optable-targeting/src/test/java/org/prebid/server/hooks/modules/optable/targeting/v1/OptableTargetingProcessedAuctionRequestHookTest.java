@@ -28,7 +28,7 @@ import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.Status;
 import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTargetingProperties;
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
-import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidRequestCleaner;
+import org.prebid.server.hooks.modules.optable.targeting.v1.core.AuctionRequestCleaner;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.BidderEnrichmentSampler;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.CompositeHookExecutionPlan;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.ConfigResolver;
@@ -587,7 +587,7 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
 
         // then
         assertThat(result.action()).isEqualTo(InvocationAction.update);
-        assertThat(result.payloadUpdate()).isInstanceOf(BidRequestCleaner.class);
+        assertThat(result.payloadUpdate()).isInstanceOf(AuctionRequestCleaner.class);
         assertThat(((ModuleContext) result.moduleContext()).getEnrichRequestStatus().getStatus())
                 .isEqualTo(Status.FAIL);
     }

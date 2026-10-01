@@ -74,7 +74,7 @@ public class OptableTargetingFlowResolver {
             startTargetingCall(moduleContext, bidRequest, invocationContext, properties, true);
         }
 
-        return update(BidRequestCleaner.instance(), moduleContext);
+        return update(AuctionRequestCleaner.instance(), moduleContext);
     }
 
     private void startDeferredTargetingCall(ModuleContext moduleContext,
@@ -182,7 +182,7 @@ public class OptableTargetingFlowResolver {
             }
 
             if (hasBidderRequestHook) {
-                return deferred ? update(BidRequestCleaner.instance(), moduleContext) : noAction(moduleContext);
+                return deferred ? update(AuctionRequestCleaner.instance(), moduleContext) : noAction(moduleContext);
             }
 
             return enrichWhenCompleted(moduleContext.getOptableTargetingCall(), moduleContext, properties);
@@ -198,7 +198,7 @@ public class OptableTargetingFlowResolver {
         // the raw auction request stage does not run for f.e. amp and video requests
         if (hasBidderRequestHook) {
             startTargetingCall(moduleContext, auctionRequestPayload.bidRequest(), invocationContext, properties, true);
-            return update(BidRequestCleaner.instance(), moduleContext);
+            return update(AuctionRequestCleaner.instance(), moduleContext);
         }
 
         final BidRequest bidRequest = auctionRequestPayload.bidRequest();
@@ -223,7 +223,7 @@ public class OptableTargetingFlowResolver {
 
         if (moduleContext.isShouldSkipEnrichment() || optableTargetingCall == null) {
             moduleContext.setOptableTargetingExecutionTime(calcAPICallExecutionTime(moduleContext));
-            return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
+            return updateWithAnalytics(AuctionRequestCleaner.instance(), moduleContext);
         }
 
         return optableTargetingCall
@@ -233,7 +233,7 @@ public class OptableTargetingFlowResolver {
                 })
                 .recover(throwable -> {
                     moduleContext.failWithExecutionTime(calcAPICallExecutionTime(moduleContext));
-                    return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
+                    return updateWithAnalytics(AuctionRequestCleaner.instance(), moduleContext);
                 });
     }
 
@@ -247,7 +247,7 @@ public class OptableTargetingFlowResolver {
         moduleContext.setEnrichRequestStatus(EnrichmentStatus.success());
 
         final PayloadUpdate<AuctionRequestPayload> payloadUpdate =
-                BidRequestCleaner.instance().andThen(BidRequestEnricher.of(targetingResult, properties))::apply;
+                AuctionRequestCleaner.instance().andThen(BidRequestEnricher.of(targetingResult, properties))::apply;
 
         return updateWithAnalytics(payloadUpdate, moduleContext);
     }
@@ -281,7 +281,7 @@ public class OptableTargetingFlowResolver {
     public Future<InvocationResult<AuctionRequestPayload>> failed(ModuleContext moduleContext) {
         moduleContext.failWithExecutionTime(
                 moduleContext.getCallTargetingAPITimestamp() > 0 ? calcAPICallExecutionTime(moduleContext) : 0);
-        return updateWithAnalytics(BidRequestCleaner.instance(), moduleContext);
+        return updateWithAnalytics(AuctionRequestCleaner.instance(), moduleContext);
     }
 
     private static Future<InvocationResult<AuctionRequestPayload>> updateWithAnalytics(
