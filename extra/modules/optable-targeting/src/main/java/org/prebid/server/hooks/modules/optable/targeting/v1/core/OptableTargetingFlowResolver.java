@@ -195,10 +195,9 @@ public class OptableTargetingFlowResolver {
             return failed(moduleContext);
         }
 
-        // the raw auction request stage does not run for f.e. amp and video requests
+        // the raw auction request stage does not run for f.e. amp and video requests, which are not enriched then
         if (hasBidderRequestHook) {
-            startTargetingCall(moduleContext, auctionRequestPayload.bidRequest(), invocationContext, properties, true);
-            return update(AuctionRequestCleaner.instance(), moduleContext);
+            return updateWithAnalytics(AuctionRequestCleaner.instance(), moduleContext);
         }
 
         final BidRequest bidRequest = auctionRequestPayload.bidRequest();

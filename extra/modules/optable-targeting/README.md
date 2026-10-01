@@ -24,10 +24,6 @@ Stored requests and stored imps are merged after the Raw Auction Request stage. 
 not known at that stage (f.e. Prebid Mobile SDK traffic, where they live in the stored request), the Processed Auction
 Request hook starts the call on the merged request instead. Without it such requests are not enriched.
 
-The Raw Auction Request stage does not run for `/openrtb2/amp` and `/openrtb2/video`. To enrich those, add the
-`processed-auction-request` and `bidder-request` hooks to their plans: the Processed Auction Request hook then starts
-the call.
-
 We recommend defining the execution plan in the account config so the module is only invoked for specific accounts. See
 below for an example.
 

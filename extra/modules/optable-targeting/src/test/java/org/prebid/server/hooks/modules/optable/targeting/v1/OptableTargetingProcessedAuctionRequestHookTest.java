@@ -370,15 +370,11 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
     }
 
     @Test
-    void callShouldStartCallForBidderRequestHookWhenRawAuctionRequestHookDidNotRun() {
+    void callShouldOnlyCleanRequestWhenRawAuctionRequestHookDidNotRunAndBidderRequestHookIsPresent() {
         // given
         target = new OptableTargetingProcessedAuctionRequestHook(
                 configResolver,
                 givenFlowResolver(givenExecutionPlan(false, true)), 0.01);
-        when(auctionRequestPayload.bidRequest()).thenReturn(givenBidRequest());
-        when(optableTargeting.getTargeting(any(), any(), any(), any()))
-                .thenReturn(Future.succeededFuture(givenTargetingResult()));
-        when(bidderEnrichmentSampler.sample(any(), any())).thenReturn(Set.of("bidder"));
 
         // when
         final InvocationResult<AuctionRequestPayload> result =
@@ -386,17 +382,9 @@ class OptableTargetingProcessedAuctionRequestHookTest extends BaseOptableTest {
 
         // then
         assertThat(result.action()).isEqualTo(InvocationAction.update);
-        final ModuleContext moduleContext = (ModuleContext) result.moduleContext();
-        assertThat(moduleContext.getBiddersToEnrich()).containsExactly("bidder");
-        assertThat(moduleContext.getOptableTargetingCall().succeeded()).isTrue();
-        assertThat(moduleContext.getOptableTargetingProperties()).isNotNull();
-
-        final BidRequest bidRequest = result
-                .payloadUpdate()
-                .apply(AuctionRequestPayloadImpl.of(givenBidRequest()))
-                .bidRequest();
-        assertThat(bidRequest.getUser().getEids()).isNull();
-        assertThat(bidRequest.getUser().getExt().getProperty("optable")).isNull();
+        assertThat(result.payloadUpdate()).isInstanceOf(AuctionRequestCleaner.class);
+        assertThat(((ModuleContext) result.moduleContext()).getOptableTargetingCall()).isNull();
+        verifyNoInteractions(optableTargeting);
     }
 
     @Test
