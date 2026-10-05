@@ -29,6 +29,9 @@ public final class OptableTargetingProperties {
 
     Long timeout;
 
+    @JsonProperty("api-timeout")
+    Long apiTimeout;
+
     @JsonProperty("id-prefix-order")
     String idPrefixOrder;
 

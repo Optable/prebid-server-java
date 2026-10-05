@@ -53,6 +53,10 @@ public class BidderEnrichmentSampler {
                 .collect(Collectors.toSet());
     }
 
+    public boolean hasBidders(BidRequest bidRequest) {
+        return !extractUniqueBidders(bidRequest).isEmpty();
+    }
+
     private static int resolvePercentage(BidderAliases aliases, String bidder,
                                          int defaultEnrichmentPercentage,
                                          Map<String, Integer> bidderEnrichmentPercentage) {
@@ -85,9 +89,5 @@ public class BidderEnrichmentSampler {
         return StreamUtil.asStream(impExt.fieldNames())
                 .filter(Ortb2ImplicitParametersResolver::isImpExtBidder)
                 .filter(field -> impExt.get(field).isObject());
-    }
-
-    public boolean hasBidders(BidRequest bidRequest) {
-        return !extractUniqueBidders(bidRequest).isEmpty();
     }
 }

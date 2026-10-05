@@ -44,10 +44,31 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
     public Future<InvocationResult<AuctionRequestPayload>> call(AuctionRequestPayload payload,
                                                                 AuctionInvocationContext invocationContext) {
 
-        final OptableTargetingProperties properties = configResolver.resolve(invocationContext.accountConfig());
         final ModuleContext moduleContext = new ModuleContext();
         moduleContext.setEarlyNetworkCallEnabled(true);
         moduleContext.setCallTargetingAPITimestamp(System.currentTimeMillis());
+
+        // whatever goes wrong here, the cleaner has to be applied, or user.ext.optable ids reach the bidders
+        try {
+            return resolveTargetingFlow(payload, invocationContext, moduleContext);
+        } catch (RuntimeException e) {
+            conditionalLogger.error("Failed to initiate Optable targeting call: " + e.getMessage(), logSamplingRate);
+
+            moduleContext.setEarlyCallInitializationCompleted(true);
+            moduleContext.setExtUserOptable(null);
+            moduleContext.failWithExecutionTime(
+                    System.currentTimeMillis() - moduleContext.getCallTargetingAPITimestamp());
+
+            return update(AuctionRequestCleaner.instance(), moduleContext);
+        }
+    }
+
+    private Future<InvocationResult<AuctionRequestPayload>> resolveTargetingFlow(
+            AuctionRequestPayload payload,
+            AuctionInvocationContext invocationContext,
+            ModuleContext moduleContext) {
+
+        final OptableTargetingProperties properties = configResolver.resolve(invocationContext.accountConfig());
         moduleContext.setOptableTargetingProperties(properties);
 
         if (!PropertiesValidator.isValid(properties)) {
@@ -61,7 +82,7 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
         }
 
         return optableTargetingFlowResolver.resolveAsyncOptableTargetingFlow(
-                moduleContext, payload, invocationContext, properties, false);
+                moduleContext, payload, invocationContext, properties);
     }
 
     public static Future<InvocationResult<AuctionRequestPayload>> update(
@@ -73,16 +94,6 @@ public class OptableRawAuctionRequestHook implements RawAuctionRequestHook {
                         .status(InvocationStatus.success)
                         .action(InvocationAction.update)
                         .payloadUpdate(payloadUpdate)
-                        .moduleContext(moduleContext)
-                        .build());
-    }
-
-    public static Future<InvocationResult<AuctionRequestPayload>> success(ModuleContext moduleContext) {
-
-        return Future.succeededFuture(
-                InvocationResultImpl.<AuctionRequestPayload>builder()
-                        .status(InvocationStatus.success)
-                        .action(InvocationAction.no_action)
                         .moduleContext(moduleContext)
                         .build());
     }

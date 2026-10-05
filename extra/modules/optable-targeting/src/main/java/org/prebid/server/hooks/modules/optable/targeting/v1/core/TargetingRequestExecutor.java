@@ -12,6 +12,7 @@ import org.prebid.server.activity.infrastructure.payload.ActivityInvocationPaylo
 import org.prebid.server.activity.infrastructure.payload.impl.ActivityInvocationPayloadImpl;
 import org.prebid.server.activity.infrastructure.payload.impl.BidRequestActivityInvocationPayload;
 import org.prebid.server.auction.model.AuctionContext;
+import org.prebid.server.auction.model.TimeoutContext;
 import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
@@ -20,7 +21,6 @@ import org.prebid.server.hooks.modules.optable.targeting.model.config.OptableTar
 import org.prebid.server.hooks.modules.optable.targeting.model.openrtb.TargetingResult;
 import org.prebid.server.hooks.modules.optable.targeting.v1.OptableTargetingModule;
 import org.prebid.server.hooks.v1.auction.AuctionInvocationContext;
-import org.prebid.server.hooks.v1.auction.AuctionRequestPayload;
 
 import java.util.Objects;
 
@@ -42,26 +42,38 @@ public class TargetingRequestExecutor {
         this.logSamplingRate = logSamplingRate;
     }
 
-    public Future<TargetingResult> makeRequest(AuctionRequestPayload payload,
+    public Future<TargetingResult> makeRequest(BidRequest bidRequest,
                                                AuctionInvocationContext invocationContext,
                                                OptableTargetingProperties properties,
-                                               Long apiTimeout) {
+                                               boolean awaitedByLaterHook) {
 
-        final BidRequest bidRequest = applyActivityRestrictions(payload.bidRequest(), invocationContext);
+        final BidRequest restrictedBidRequest = applyActivityRestrictions(bidRequest, invocationContext);
 
-        final Timeout timeout = apiTimeout == null
-                ? getHookTimeout(invocationContext)
-                : timeoutFactory.create(getHookTimeout(invocationContext).remaining() + apiTimeout);
+        final Timeout timeout = awaitedByLaterHook
+                ? resolveCrossHookTimeout(invocationContext, properties)
+                : invocationContext.timeout();
         final OptableAttributes attributes = OptableAttributesResolver.resolveAttributes(
                 invocationContext.auctionContext(),
                 properties.getTimeout(),
                 logSamplingRate);
 
-        return optableTargeting.getTargeting(properties, bidRequest, attributes, timeout);
+        return optableTargeting.getTargeting(properties, restrictedBidRequest, attributes, timeout);
     }
 
-    private static Timeout getHookTimeout(AuctionInvocationContext invocationContext) {
-        return invocationContext.timeout();
+    /**
+     * A call that is awaited by a later hook can't be bound by the timeout of the hook that starts it.
+     */
+    private Timeout resolveCrossHookTimeout(AuctionInvocationContext invocationContext,
+                                            OptableTargetingProperties properties) {
+
+        final Long apiTimeout = properties.getApiTimeout();
+        if (apiTimeout != null && apiTimeout > 0) {
+            return timeoutFactory.create(apiTimeout);
+        }
+
+        final TimeoutContext timeoutContext = invocationContext.auctionContext().getTimeoutContext();
+        final Timeout auctionTimeout = timeoutContext != null ? timeoutContext.getTimeout() : null;
+        return auctionTimeout != null ? auctionTimeout : invocationContext.timeout();
     }
 
     private BidRequest applyActivityRestrictions(BidRequest bidRequest,
