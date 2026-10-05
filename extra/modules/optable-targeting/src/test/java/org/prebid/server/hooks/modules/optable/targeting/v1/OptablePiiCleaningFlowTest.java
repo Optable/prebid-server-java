@@ -106,7 +106,7 @@ public class OptablePiiCleaningFlowTest extends BaseOptableTest {
         ModuleContext moduleContext = null;
         if (setup.hasRawHook) {
             final InvocationResult<AuctionRequestPayload> rawResult = flow.callRawHook(rawRequest);
-            moduleContext = (ModuleContext) rawResult.moduleContext();
+            moduleContext = rawResult != null ? (ModuleContext) rawResult.moduleContext() : null;
             auctionRequest = applied(rawResult, auctionRequest);
         }
 
