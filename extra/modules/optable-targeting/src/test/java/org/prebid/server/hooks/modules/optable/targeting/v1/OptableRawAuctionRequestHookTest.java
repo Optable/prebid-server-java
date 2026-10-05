@@ -16,6 +16,7 @@ import org.prebid.server.auction.privacy.enforcement.mask.UserFpdActivityMask;
 import org.prebid.server.execution.timeout.Timeout;
 import org.prebid.server.execution.timeout.TimeoutFactory;
 import org.prebid.server.hooks.execution.model.ExecutionPlan;
+import org.prebid.server.hooks.execution.v1.auction.AuctionRequestPayloadImpl;
 import org.prebid.server.hooks.modules.optable.targeting.model.ModuleContext;
 import org.prebid.server.hooks.modules.optable.targeting.model.Status;
 import org.prebid.server.hooks.modules.optable.targeting.v1.core.AuctionRequestCleaner;
@@ -198,8 +199,7 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
 
     @SneakyThrows
     @Test
-    public void shouldNotInjectEarlyNetworkCallToModuleContextWhenNoBiddersToEnrich(
-            VertxTestContext vertxTestContext) {
+    public void shouldCleanRequestWhenNoBiddersToEnrich(VertxTestContext vertxTestContext) {
 
         // given
         when(invocationContext.accountConfig())
@@ -221,6 +221,17 @@ public class OptableRawAuctionRequestHookTest extends BaseOptableTest {
                         assertThat(moduleContext.getOptableTargetingCall()).isNull();
                         assertThat(moduleContext.getBiddersToEnrich()).isNull();
                         assertThat(moduleContext.isEarlyCallInitializationCompleted()).isTrue();
+
+                        final InvocationResult<AuctionRequestPayload> invocationResult = result.result();
+                        assertThat(invocationResult).isNotNull()
+                                .returns(InvocationStatus.success, InvocationResult::status)
+                                .returns(InvocationAction.update, InvocationResult::action)
+                                .extracting(InvocationResult::errors).isNull();
+                        assertThat(invocationResult.payloadUpdate()).isNotNull();
+                        final BidRequest bidRequest = invocationResult.payloadUpdate()
+                                .apply(AuctionRequestPayloadImpl.of(givenBidRequest()))
+                                .bidRequest();
+                        assertThat(bidRequest.getUser().getExt().getProperty("optable")).isNull();
                     });
                     vertxTestContext.completeNow();
                 });
